@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Background -->
+  <rect width="64" height="64" rx="14" fill="#F1ECE2"/>
+  <!-- Grid lines (subtle) -->
+  <line x1="0" y1="21" x2="64" y2="21" stroke="#14141318" stroke-width="0.5"/>
+  <line x1="0" y1="43" x2="64" y2="43" stroke="#14141318" stroke-width="0.5"/>
+  <line x1="21" y1="0" x2="21" y2="64" stroke="#14141318" stroke-width="0.5"/>
+  <line x1="43" y1="0" x2="43" y2="64" stroke="#14141318" stroke-width="0.5"/>
+  <!-- Cobalt square mark -->
+  <rect x="12" y="12" width="10" height="10" rx="2" fill="#2536D6"/>
+  <!-- Document lines -->
+  <rect x="12" y="27" width="40" height="2.5" rx="1.25" fill="#141413" opacity="0.85"/>
+  <rect x="12" y="33" width="32" height="2.5" rx="1.25" fill="#141413" opacity="0.5"/>
+  <rect x="12" y="39" width="36" height="2.5" rx="1.25" fill="#141413" opacity="0.5"/>
+  <rect x="12" y="45" width="24" height="2.5" rx="1.25" fill="#141413" opacity="0.3"/>
+  <!-- .md badge -->
+  <rect x="36" y="10" width="18" height="14" rx="3" fill="#2536D6"/>
+  <text x="45" y="21" font-family="monospace" font-size="7" font-weight="600" fill="white" text-anchor="middle">.md</text>
+</svg>

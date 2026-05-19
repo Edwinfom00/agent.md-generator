@@ -1,16 +1,57 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AppHeader } from '@/components/ui/AppHeader'
 import { StepRail } from '@/components/ui/StepRail'
 import { AppFooter } from '@/components/ui/AppFooter'
 import { PreviewPane } from '@/components/ui/PreviewPane'
+import { HistoryDrawer } from '@/components/ui/HistoryDrawer'
 import { QuestionField } from './QuestionField'
 import { ReviewStep } from './ReviewStep'
 import { GeneratingScreen } from './GeneratingScreen'
+import { SessionBanner } from './SessionBanner'
+import { TemplatePickerScreen } from './TemplatePickerScreen'
+import { UpdateModeScreen } from './UpdateModeScreen'
 import { ResultScreen } from '@/components/output/ResultScreen'
 import { getQuestionsForStep, isQuestionVisible, TOTAL_STEPS } from '@/lib/questions'
+import { saveToHistory, loadHistory } from '@/lib/history'
+import { decodeConfig } from '@/lib/shareConfig'
+import type { HistoryEntry } from '@/lib/history'
 import type { WizardAnswers, WizardStep } from '@/types'
+
+const SESSION_KEY = 'agent-md-generator:session'
+
+interface SavedSession {
+  answers: WizardAnswers
+  currentStep: number
+  wizardStep: WizardStep
+}
+
+function loadSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as SavedSession
+  } catch {
+    return null
+  }
+}
+
+function saveSession(session: SavedSession) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+  } catch {
+    // localStorage unavailable (private browsing quota exceeded, etc.)
+  }
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    // ignore
+  }
+}
 
 const STEP_TITLES: Record<number, { lead: string; em: string; meta: string }> = {
   1: { lead: 'Who is this ', em: 'project', meta: '≈ 60 seconds' },
@@ -20,12 +61,100 @@ const STEP_TITLES: Record<number, { lead: string; em: string; meta: string }> = 
 }
 
 export function WizardShell() {
-  const [wizardStep, setWizardStep] = useState<WizardStep>('questions')
+  const [wizardStep, setWizardStep] = useState<WizardStep>('template')
   const [currentStep, setCurrentStep] = useState(1)
   const [answers, setAnswers] = useState<WizardAnswers>({})
   const [output, setOutput] = useState('')
+  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showBanner, setShowBanner] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const config = params.get('config')
+    if (!config) return
+    const decoded = decodeConfig(config)
+    if (!decoded) return
+    setAnswers(decoded)
+    setCurrentStep(1)
+    setWizardStep('questions')
+    history.replaceState(null, '', window.location.pathname)
+  }, [])
+
+  useEffect(() => {
+    const saved = loadSession()
+    if (saved && Object.keys(saved.answers).length > 0) {
+      setShowBanner(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (wizardStep === 'output' || wizardStep === 'generating' || wizardStep === 'template') return
+    saveSession({ answers, currentStep, wizardStep })
+  }, [answers, currentStep, wizardStep])
+
+  function handleSelectTemplate(templateAnswers: Partial<WizardAnswers>) {
+    setAnswers(templateAnswers as WizardAnswers)
+    setCurrentStep(1)
+    setWizardStep('questions')
+  }
+
+  function handleStartFresh() {
+    setCurrentStep(1)
+    setWizardStep('questions')
+  }
+
+  function handleStartUpdate() {
+    setError('')
+    setWizardStep('update')
+  }
+
+  async function handleUpdateGenerate(existingContent: string, changeDescription: string) {
+    setLoading(true)
+    setError('')
+    setWizardStep('generating')
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'update', existingContent, changeDescription }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) throw new Error(data.error ?? 'Generation failed')
+      setOutput(data.content)
+      setWarnings(data.warnings ?? [])
+      saveToHistory({ _change: changeDescription }, data.content)
+      setWizardStep('output')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+      setWizardStep('update')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleResume() {
+    const saved = loadSession()
+    if (!saved) return
+    setAnswers(saved.answers)
+    setCurrentStep(saved.currentStep)
+    setWizardStep(saved.wizardStep === 'template' ? 'questions' : saved.wizardStep)
+    setShowBanner(false)
+  }
+
+  function handleDiscard() {
+    clearSession()
+    setShowBanner(false)
+  }
+
+  function handleOpenHistory() {
+    setHistoryEntries(loadHistory())
+    setShowHistory(true)
+  }
 
   const visibleQuestions = getQuestionsForStep(currentStep).filter(q =>
     isQuestionVisible(q, answers),
@@ -77,6 +206,8 @@ export function WizardShell() {
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error ?? 'Generation failed')
       setOutput(data.content)
+      setWarnings(data.warnings ?? [])
+      saveToHistory(answers, data.content)
       setWizardStep('output')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -87,18 +218,59 @@ export function WizardShell() {
   }
 
   function handleReset() {
+    clearSession()
     setAnswers({})
     setOutput('')
+    setWarnings([])
     setError('')
     setCurrentStep(1)
-    setWizardStep('questions')
+    setWizardStep('template')
+  }
+
+  if (wizardStep === 'update') {
+    return (
+      <div className="h-screen flex flex-col bg-paper overflow-hidden">
+        <AppHeader onHistoryOpen={handleOpenHistory} />
+        <UpdateModeScreen
+          onGenerate={handleUpdateGenerate}
+          onBack={() => setWizardStep('template')}
+          loading={loading}
+          error={error}
+        />
+        {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
+      </div>
+    )
+  }
+
+  if (wizardStep === 'template') {
+    return (
+      <div className="h-screen flex flex-col bg-paper overflow-hidden">
+        <AppHeader onHistoryOpen={handleOpenHistory} />
+        {showBanner && (
+          <SessionBanner onResume={handleResume} onDiscard={handleDiscard} />
+        )}
+        <TemplatePickerScreen
+          onSelect={handleSelectTemplate}
+          onStartFresh={handleStartFresh}
+          onUpdate={handleStartUpdate}
+        />
+        {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
+      </div>
+    )
   }
 
   if (wizardStep === 'output') {
     return (
       <div className="h-screen flex flex-col bg-paper overflow-hidden">
-        <AppHeader />
-        <ResultScreen content={output} answers={answers} onReset={handleReset} />
+        <AppHeader onHistoryOpen={handleOpenHistory} />
+        <ResultScreen
+          content={output}
+          answers={answers}
+          warnings={warnings}
+          onReset={handleReset}
+          onRegenerate={handleGenerate}
+        />
+        {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
       </div>
     )
   }
@@ -106,8 +278,9 @@ export function WizardShell() {
   if (wizardStep === 'generating') {
     return (
       <div className="h-screen flex flex-col bg-paper overflow-hidden">
-        <AppHeader />
+        <AppHeader onHistoryOpen={handleOpenHistory} />
         <GeneratingScreen />
+        {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
       </div>
     )
   }
@@ -117,7 +290,10 @@ export function WizardShell() {
 
   return (
     <div className="h-screen flex flex-col bg-paper overflow-hidden">
-      <AppHeader />
+      <AppHeader onHistoryOpen={handleOpenHistory} />
+      {showBanner && (
+        <SessionBanner onResume={handleResume} onDiscard={handleDiscard} />
+      )}
       <StepRail current={isReview ? TOTAL_STEPS : currentStep - 1} />
 
       <div className="flex-1 grid overflow-hidden min-h-0" style={{ gridTemplateColumns: '1fr 540px' }}>
@@ -183,6 +359,7 @@ export function WizardShell() {
         onBack={handleBack}
         onContinue={isReview ? handleGenerate : handleNext}
       />
+      {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
     </div>
   )
 }

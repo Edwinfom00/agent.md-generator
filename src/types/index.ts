@@ -27,13 +27,17 @@ export interface WizardAnswers {
   [questionId: string]: string | string[]
 }
 
-export type WizardStep = 'intro' | 'questions' | 'review' | 'generating' | 'output'
+export type WizardStep = 'intro' | 'template' | 'questions' | 'review' | 'generating' | 'output' | 'update'
 
 export interface GenerateRequest {
-  answers: WizardAnswers
+  answers?: WizardAnswers
+  mode?: 'update'
+  existingContent?: string
+  changeDescription?: string
 }
 
 export interface GenerateResponse {
   content: string
   error?: string
+  warnings?: string[]
 }

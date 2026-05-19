@@ -17,7 +17,10 @@ export function buildPrompt(answers: WizardAnswers): string {
   const projectName = answers['project_name'] as string ?? 'My Project'
   const projectType = getLabel('project_type', answers['project_type'] ?? '')
   const description = answers['project_description'] as string ?? ''
+  const mobilePlatforms = answers['mobile_platforms'] ? getLabel('mobile_platforms', answers['mobile_platforms']) : null
+  const npmDistribution = answers['npm_distribution'] ? getLabel('npm_distribution', answers['npm_distribution']) : null
   const techStack = getLabel('tech_stack', answers['tech_stack'] ?? [])
+  const pythonFramework = answers['python_framework'] ? getLabel('python_framework', answers['python_framework']) : null
   const aiFeatures = getLabel('ai_features', answers['ai_features'] ?? 'no')
   const aiProviders = answers['ai_providers'] ? getLabel('ai_providers', answers['ai_providers']) : 'None'
   const folderStructure = answers['folder_structure'] as string ?? ''
@@ -40,10 +43,10 @@ Use the DeutschFlow AGENT.md and Preflight AGENT.md as structural references for
 PROJECT INFORMATION:
 
 Project Name: ${projectName}
-Project Type: ${projectType}
+Project Type: ${projectType}${mobilePlatforms ? `\nMobile Platforms: ${mobilePlatforms}` : ''}${npmDistribution ? `\nPackage Distribution: ${npmDistribution}` : ''}
 Description: ${description}
 
-Tech Stack: ${techStack}
+Tech Stack: ${techStack}${pythonFramework ? `\nPython Framework: ${pythonFramework}` : ''}
 AI Features: ${aiFeatures}
 AI Providers: ${aiProviders}
 

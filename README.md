@@ -6,7 +6,7 @@
 
 A focused web app that guides you through a 4-step editorial flow and generates a complete, project-specific `AGENT.md` (or `CLAUDE.md`) powered by DeepSeek.
 
-**[Live demo](https://packages.edwinfom.dev)** · **Built by [Edwin Fom](https://github.com/Edwinfom00)**
+**[Live demo](https://agent-md-generator.edwinfom.dev)** · **Built by [Edwin Fom](https://github.com/Edwinfom00)**
 
 ---
 

@@ -1,15 +1,37 @@
 {
   "name": "agent-md-generator",
   "version": "0.1.0",
-  "private": true,
+  "description": "Generate production-grade AGENT.md files for your project via an interactive terminal wizard.",
+  "keywords": ["agent", "ai", "claude", "cursor", "kiro", "copilot", "cli", "generator"],
+  "homepage": "https://agent-md-generator.edwinfom.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Edwinfom00/agent-md-generator"
+  },
+  "license": "MIT",
+  "author": "Edwin Fom",
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/cli.mjs",
+    "README.md"
+  ],
+  "bin": {
+    "agent-md-generator": "./dist/cli.mjs"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cli": "tsup",
+    "cli": "node ./dist/cli.mjs",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.0",
     "ai": "^6.0.184",
     "clsx": "^2.1.1",
     "framer-motion": "^12.39.0",
@@ -20,7 +42,8 @@
     "react-icons": "^5.6.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "@clack/prompts": "^0.9.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -30,6 +53,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "tsup": "^8.5.0"
   }
 }

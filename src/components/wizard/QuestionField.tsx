@@ -3,6 +3,7 @@
 import { cn } from '@/lib/cn'
 import type { Question, WizardAnswers } from '@/types'
 import { RiCheckLine } from 'react-icons/ri'
+import { ManifestDropZone } from './ManifestDropZone'
 
 interface QuestionFieldProps {
   question: Question
@@ -151,6 +152,12 @@ export function QuestionField({ question, answers, onChange, index }: QuestionFi
             <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-mute">
               {((value as string[]) ?? []).length} selected
             </p>
+            {question.id === 'tech_stack' && (
+              <ManifestDropZone
+                currentValues={(value as string[]) ?? []}
+                onDetected={merged => onChange(question.id, merged)}
+              />
+            )}
           </>
         )}
       </div>

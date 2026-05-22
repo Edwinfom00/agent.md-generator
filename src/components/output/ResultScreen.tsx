@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { WizardAnswers } from '@/types'
@@ -8,6 +8,9 @@ import { QUESTIONS } from '@/lib/questions'
 import { OUTPUT_FORMATS } from '@/lib/formatOutput'
 import { scoreOutput } from '@/lib/scoreOutput'
 import { encodeConfig } from '@/lib/shareConfig'
+import { refineChatMessage } from '@/lib/chatOutput'
+import { computeLineDiff, getDiffHunks } from '@/lib/diff'
+import type { DiffHunk } from '@/lib/diff'
 import {
   RiDownloadLine,
   RiFileCopyLine,
@@ -18,8 +21,22 @@ import {
   RiArrowDownSLine,
   RiEditLine,
   RiShareLine,
+  RiSendPlane2Line,
+  RiLoaderLine,
+  RiChatSmile2Line,
+  RiCloseLine,
+  RiSparklingLine,
+  RiUser3Line,
+  RiCheckDoubleLine,
+  RiAlertLine,
 } from 'react-icons/ri'
 import { cn } from '@/lib/cn'
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  text: string
+  error?: boolean
+}
 
 interface ResultScreenProps {
   content: string
@@ -57,14 +74,24 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
   const [shared, setShared] = useState(false)
   const [view, setView] = useState<'preview' | 'source'>('preview')
   const [showDownloadMenu, setShowDownloadMenu] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [pendingContent, setPendingContent] = useState<string | null>(null)
+  
   const downloadMenuRef = useRef<HTMLDivElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
   const codeRef = useRef<HTMLDivElement>(null)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
   const lines = editedContent.split('\n')
   const lineCount = lines.length
   const byteCount = new TextEncoder().encode(editedContent).length
   const score = scoreOutput(editedContent)
+
+  const hunks = pendingContent ? getDiffHunks(computeLineDiff(editedContent, pendingContent)) : []
 
   useEffect(() => {
     const code = codeRef.current
@@ -85,6 +112,59 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showDownloadMenu])
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, chatLoading])
+
+  const handleChat = useCallback(async (instruction: string) => {
+    if (!instruction.trim() || chatLoading || pendingContent) return
+    const userMsg: ChatMessage = { role: 'user', text: instruction.trim() }
+    setChatMessages(prev => [...prev, userMsg])
+    setChatInput('')
+    setChatLoading(true)
+
+    const result = await refineChatMessage(editedContent, instruction.trim())
+    setChatLoading(false)
+
+    if (result.error || !result.content) {
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', text: result.error ?? 'Something went wrong.', error: true },
+      ])
+    } else {
+      setPendingContent(result.content)
+      setChatMessages(prev => [
+        ...prev,
+        { role: 'assistant', text: '✨ I have prepared a draft update. Please review the proposed changes below and confirm them.' },
+      ])
+    }
+  }, [editedContent, chatLoading, pendingContent])
+
+  const handleApplyPending = useCallback(() => {
+    if (!pendingContent) return
+    setEditedContent(pendingContent)
+    setPendingContent(null)
+    setChatMessages(prev => [
+      ...prev,
+      { role: 'assistant', text: '✅ Proposed changes successfully applied!' }
+    ])
+  }, [pendingContent])
+
+  const handleDiscardPending = useCallback(() => {
+    setPendingContent(null)
+    setChatMessages(prev => [
+      ...prev,
+      { role: 'assistant', text: '❌ Proposed changes discarded.' }
+    ])
+  }, [])
+
+  function handleChatKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleChat(chatInput)
+    }
+  }
 
   async function handleCopy() {
     await navigator.clipboard.writeText(editedContent)
@@ -139,7 +219,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
       )}
 
       <div className="flex-1 grid overflow-hidden min-h-0" style={{ gridTemplateColumns: '380px 1fr' }}>
-        <aside className="border-r border-rule bg-paper flex flex-col gap-7 p-12 overflow-y-auto">
+      <aside className="border-r border-rule bg-paper flex flex-col gap-7 p-12 overflow-y-auto">
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-mute flex items-center gap-2">
             <span className="text-cobalt" style={{ fontFamily: 'var(--font-instrument-serif)' }}>↳</span>
             generated
@@ -217,7 +297,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
             </div>
             <div className="w-full h-1 bg-paper-deep rounded-full overflow-hidden">
               <div
-                className="h-full bg-cobalt rounded-full"
+                className="h-full bg-cobalt rounded-full transition-all duration-500"
                 style={{ width: `${(score.found / score.total) * 100}%` }}
               />
             </div>
@@ -266,7 +346,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
           </p>
         </aside>
 
-        <main className="bg-paper-soft flex flex-col gap-4 p-12 overflow-hidden">
+        <main className="bg-paper-soft flex flex-col gap-4 p-12 overflow-hidden relative">
           <div className="flex-1 bg-white border border-rule rounded-lg flex flex-col overflow-hidden min-h-0">
             <div className="flex items-center justify-between px-5.5 py-3.5 border-b border-rule bg-paper-soft shrink-0">
               <span className="font-mono text-[12px] text-ink flex items-center gap-2.5">
@@ -466,6 +546,263 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
               </div>
             )}
           </div>
+
+          {/* ── Floating chat FAB + panel ─────────────────── */}
+          <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3.5" style={{ zIndex: 20 }}>
+
+            {/* Floating chat panel */}
+            {chatOpen && (
+              <div
+                className="w-[360px] bg-paper/95 border border-cobalt/25 rounded-2xl shadow-[0_12px_42px_-4px_rgba(0,0,0,0.12)] flex flex-col overflow-hidden animate-fade-up backdrop-blur-md transition-all duration-300"
+                style={{ maxHeight: '520px' }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between px-4.5 py-3.5 bg-paper-deep border-b border-rule shrink-0">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </div>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink font-bold">AI Co-Pilot</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-[9px] text-ink-mute select-none bg-paper-soft border border-rule px-1.5 py-0.5 rounded">
+                      ↵ Send
+                    </span>
+                    <button
+                      onClick={() => setChatOpen(false)}
+                      className="text-ink-mute hover:text-ink hover:rotate-90 transition-transform duration-200"
+                    >
+                      <RiCloseLine className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick suggestion chips — shown only when no messages yet */}
+                {chatMessages.length === 0 && score.sections.filter(s => !s.present).length > 0 && (
+                  <div className="px-4.5 pt-3.5 pb-2.5 flex flex-wrap gap-1.5 shrink-0 border-b border-rule bg-paper/50">
+                    <span className="font-mono text-[10px] text-ink-mute w-full mb-1">Add missing sections:</span>
+                    {score.sections
+                      .filter(s => !s.present)
+                      .slice(0, 4)
+                      .map(s => (
+                        <button
+                          key={s.label}
+                          onClick={() => handleChat(`Add a ## ${s.label} section with detailed, project-specific content`)}
+                          disabled={chatLoading || !!pendingContent}
+                          className="inline-flex items-center gap-1 font-mono text-[10px] px-3 py-1.5 rounded-full border border-rule bg-white text-ink-mute hover:border-cobalt hover:text-cobalt hover:bg-cobalt-soft/20 transition-all hover:scale-102 active:scale-98 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                        >
+                          + {s.label}
+                        </button>
+                      ))}
+                  </div>
+                )}
+
+                {/* Message history */}
+                <div className="flex-1 px-4.5 py-4 flex flex-col gap-4 overflow-y-auto min-h-0 select-text">
+                  {chatMessages.length === 0 ? (
+                    <div className="flex flex-col gap-2 p-3 rounded-xl border border-rule bg-paper-soft/40 font-mono text-[11px] text-ink-mute leading-[1.6]">
+                      <div className="flex items-center gap-1.5 text-cobalt font-semibold">
+                        <RiSparklingLine className="w-3.5 h-3.5" />
+                        <span>Interactive Refinement</span>
+                      </div>
+                      Describe what you&apos;d like to add, remove, or modify. The AI will output a clean draft for your review and approval.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {chatMessages.map((msg, i) => (
+                        <div
+                          key={i}
+                          className={cn(
+                            'flex gap-2.5 items-start',
+                            msg.role === 'user' ? 'flex-row-reverse' : 'flex-row',
+                          )}
+                        >
+                          {/* Avatar */}
+                          <div
+                            className={cn(
+                              'w-6.5 h-6.5 rounded-full flex items-center justify-center shrink-0 shadow-sm border text-white',
+                              msg.role === 'user'
+                                ? 'bg-ink border-ink/10'
+                                : msg.error
+                                ? 'bg-signal border-signal/10'
+                                : 'bg-gradient-to-tr from-cobalt to-indigo-600 border-cobalt/10',
+                            )}
+                          >
+                            {msg.role === 'user' ? (
+                              <RiUser3Line className="w-3.5 h-3.5" />
+                            ) : (
+                              <RiSparklingLine className="w-3.5 h-3.5" />
+                            )}
+                          </div>
+
+                          {/* Bubble */}
+                          <div
+                            className={cn(
+                              'rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed shadow-sm max-w-[80%]',
+                              msg.role === 'user'
+                                ? 'rounded-tr-none bg-cobalt text-white border border-cobalt/10'
+                                : msg.error
+                                ? 'rounded-tl-none bg-signal/8 text-signal border border-signal/20 font-mono text-[11.5px]'
+                                : 'rounded-tl-none bg-paper-deep text-ink border border-rule/50',
+                            )}
+                          >
+                            <p className={cn(msg.role === 'user' ? 'font-sans' : 'font-sans')}>
+                              {msg.text}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Typing Indicator */}
+                  {chatLoading && (
+                    <div className="flex gap-2.5 items-start self-start animate-pulse">
+                      <div className="w-6.5 h-6.5 rounded-full bg-gradient-to-tr from-cobalt to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                        <RiSparklingLine className="w-3.5 h-3.5 animate-spin-slow" />
+                      </div>
+                      <div className="rounded-2xl rounded-tl-none px-4 py-3 bg-paper-deep text-ink border border-rule/50 shadow-sm flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-ink/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 bg-ink/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 bg-ink/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 🚨 Proposed Draft Review Widget 🚨 */}
+                  {pendingContent && (
+                    <div className="border border-rule/70 rounded-xl bg-white overflow-hidden shadow-md flex flex-col border-l-4 border-l-emerald-500 animate-fade-in shrink-0">
+                      <div className="bg-paper-deep px-3.5 py-2.5 border-b border-rule flex items-center justify-between">
+                        <span className="font-mono text-[10px] uppercase tracking-wider text-ink font-semibold flex items-center gap-1.5">
+                          <RiSparklingLine className="w-3.5 h-3.5 text-emerald-500 animate-pulse" />
+                          Proposed Update
+                        </span>
+                        <span className="font-mono text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
+                          Review Draft
+                        </span>
+                      </div>
+                      
+                      <div className="max-h-[170px] overflow-y-auto bg-paper-soft font-mono text-[10px] leading-[1.6] p-3 divide-y divide-rule/20 select-text">
+                        {hunks.length === 0 ? (
+                          <div className="text-ink-mute italic py-3 text-center">
+                            No major structural changes (formatting only).
+                          </div>
+                        ) : (
+                          hunks.map((hunk, hunkIdx) => (
+                            <div key={hunkIdx} className="py-2 first:pt-0 last:pb-0">
+                              <div className="text-cobalt font-bold text-[9px] mb-1.5 tracking-wide bg-cobalt/5 px-2 py-0.5 rounded">
+                                @@ -{hunk.oldStart},{hunk.oldLength} +{hunk.newStart},{hunk.newLength} @@
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                {hunk.lines.map((line, lineIdx) => (
+                                  <div
+                                    key={lineIdx}
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded-[3px] whitespace-pre-wrap flex gap-2 font-mono",
+                                      line.type === 'added' && "bg-emerald-50/70 text-emerald-900 border-l-2 border-emerald-500",
+                                      line.type === 'removed' && "bg-rose-50/70 text-rose-900 border-l-2 border-rose-500 line-through opacity-70",
+                                      line.type === 'unchanged' && "text-ink-mute opacity-60 font-normal"
+                                    )}
+                                  >
+                                    <span className="w-3 select-none opacity-40 shrink-0 text-right">
+                                      {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
+                                    </span>
+                                    <span className="break-all font-mono text-[10px]">{line.text || ' '}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="bg-paper-deep border-t border-rule p-3 flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={handleApplyPending}
+                          className="flex-1 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-[11px] uppercase tracking-wider font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <RiCheckDoubleLine className="w-3.5 h-3.5" />
+                          Apply Changes
+                        </button>
+                        <button
+                          onClick={handleDiscardPending}
+                          className="py-2.5 px-3 rounded-lg border border-rule bg-white hover:border-ink hover:bg-paper-soft text-ink-mute hover:text-ink font-mono text-[11px] uppercase tracking-wider transition-all active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          Discard
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {/* Input row or Block status */}
+                {pendingContent ? (
+                  <div className="shrink-0 py-3.5 px-4.5 border-t border-rule bg-paper-soft text-center font-mono text-[10px] text-cobalt flex items-center justify-center gap-1.5 select-none animate-pulse">
+                    <RiAlertLine className="w-4 h-4 text-cobalt" />
+                    Review and resolve proposed changes above.
+                  </div>
+                ) : (
+                  <div className="shrink-0 flex items-end gap-2 px-3 py-3 border-t border-rule bg-paper">
+                    <textarea
+                      ref={chatInputRef}
+                      value={chatInput}
+                      onChange={e => setChatInput(e.target.value)}
+                      onKeyDown={handleChatKeyDown}
+                      disabled={chatLoading}
+                      rows={1}
+                      placeholder={chatLoading ? 'DeepSeek is thinking…' : 'Ask to add or edit sections…'}
+                      className="flex-1 font-mono text-[12px] bg-transparent resize-none outline-none text-ink placeholder:text-ink-mute leading-[1.5] py-1 pl-2 disabled:opacity-50"
+                      style={{ maxHeight: '80px', overflowY: 'auto' }}
+                    />
+                    <button
+                      onClick={() => handleChat(chatInput)}
+                      disabled={!chatInput.trim() || chatLoading}
+                      className="shrink-0 p-2.5 rounded-full bg-cobalt text-white hover:bg-cobalt-deep transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                    >
+                      {chatLoading ? (
+                        <RiLoaderLine className="w-4 h-4 animate-spin-slow" />
+                      ) : (
+                        <RiSendPlane2Line className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* FAB */}
+            <button
+              id="result-chat-fab"
+              onClick={() => setChatOpen(v => !v)}
+              title={chatOpen ? 'Close chat' : 'Refine with AI'}
+              className={cn(
+                'w-13 h-13 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 relative group cursor-pointer border border-white/10 outline-none',
+                chatOpen
+                  ? 'bg-ink text-paper hover:bg-ink-2 rotate-[15deg] scale-95 shadow-lg'
+                  : 'bg-cobalt text-white hover:bg-cobalt-deep hover:scale-108 hover:shadow-cobalt/35',
+              )}
+              style={{ width: '52px', height: '52px' }}
+            >
+              {chatOpen ? (
+                <RiCloseLine className="w-5.5 h-5.5" />
+              ) : (
+                <>
+                  <RiChatSmile2Line className="w-5.5 h-5.5 transition-transform duration-300 group-hover:scale-110" />
+                  {/* Subtle breathing outer ring */}
+                  <span className="absolute inset-0 rounded-full border border-cobalt animate-ping opacity-25 group-hover:animate-none" />
+                </>
+              )}
+              {chatMessages.length > 0 && !chatOpen && (
+                <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-signal text-white text-[9.5px] font-mono rounded-full flex items-center justify-center border-2 border-paper animate-fade-in font-bold shadow-md">
+                  {chatMessages.filter(m => m.role === 'assistant').length}
+                </span>
+              )}
+            </button>
+          </div>
+
+
         </main>
       </div>
     </div>

@@ -11,6 +11,7 @@ import { ReviewStep } from './ReviewStep'
 import { GeneratingScreen } from './GeneratingScreen'
 import { SessionBanner } from './SessionBanner'
 import { TemplatePickerScreen } from './TemplatePickerScreen'
+import { LandingScreen } from './LandingScreen'
 import { UpdateModeScreen } from './UpdateModeScreen'
 import { ResultScreen } from '@/components/output/ResultScreen'
 import { getQuestionsForStep, isQuestionVisible, TOTAL_STEPS } from '@/lib/questions'
@@ -61,7 +62,7 @@ const STEP_TITLES: Record<number, { lead: string; em: string; meta: string }> = 
 }
 
 export function WizardShell() {
-  const [wizardStep, setWizardStep] = useState<WizardStep>('template')
+  const [wizardStep, setWizardStep] = useState<WizardStep>('intro')
   const [currentStep, setCurrentStep] = useState(1)
   const [answers, setAnswers] = useState<WizardAnswers>({})
   const [output, setOutput] = useState('')
@@ -92,9 +93,14 @@ export function WizardShell() {
   }, [])
 
   useEffect(() => {
-    if (wizardStep === 'output' || wizardStep === 'generating' || wizardStep === 'template') return
-    saveSession({ answers, currentStep, wizardStep })
+    if (wizardStep === 'questions' || wizardStep === 'review') {
+      saveSession({ answers, currentStep, wizardStep })
+    }
   }, [answers, currentStep, wizardStep])
+
+  function handleGoToTemplates() {
+    setWizardStep('template')
+  }
 
   function handleSelectTemplate(templateAnswers: Partial<WizardAnswers>) {
     setAnswers(templateAnswers as WizardAnswers)
@@ -224,7 +230,20 @@ export function WizardShell() {
     setWarnings([])
     setError('')
     setCurrentStep(1)
-    setWizardStep('template')
+    setWizardStep('intro')
+  }
+
+  if (wizardStep === 'intro') {
+    return (
+      <div className="h-screen flex flex-col bg-paper overflow-hidden">
+        <AppHeader onHistoryOpen={handleOpenHistory} />
+        {showBanner && (
+          <SessionBanner onResume={handleResume} onDiscard={handleDiscard} />
+        )}
+        <LandingScreen onStart={handleGoToTemplates} />
+        {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
+      </div>
+    )
   }
 
   if (wizardStep === 'update') {

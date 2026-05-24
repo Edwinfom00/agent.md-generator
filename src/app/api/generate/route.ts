@@ -71,12 +71,13 @@ export async function POST(req: NextRequest) {
   }
 
   const deepseek = createDeepSeek({ apiKey })
+  const temperature = body.variant === true ? 0.7 : 0.3
 
   try {
     const { text } = await generateText({
       model: deepseek('deepseek-chat'),
       prompt,
-      temperature: 0.3,
+      temperature,
       maxOutputTokens: 8000,
     })
 

@@ -1,7 +1,9 @@
 'use client'
 
 import { cn } from '@/lib/cn'
-import { RiArrowLeftLine, RiArrowRightLine, RiSparklingLine } from 'react-icons/ri'
+import { RiArrowLeftLine, RiArrowRightLine, RiSparklingLine, RiFileTextLine } from 'react-icons/ri'
+import { estimateOutputLines } from '@/lib/estimateLines'
+import type { WizardAnswers } from '@/types'
 
 interface AppFooterProps {
   step: number
@@ -12,6 +14,7 @@ interface AppFooterProps {
   canContinue?: boolean
   onBack?: () => void
   onContinue?: () => void
+  answers?: WizardAnswers
 }
 
 export function AppFooter({
@@ -23,7 +26,9 @@ export function AppFooter({
   canContinue = true,
   onBack,
   onContinue,
+  answers,
 }: AppFooterProps) {
+  const estimated = answers ? estimateOutputLines(answers) : 0
   return (
     <footer className="flex items-center justify-between px-14 py-[18px] border-t border-ink bg-paper">
       <div className="flex items-center gap-[14px]">
@@ -37,15 +42,29 @@ export function AppFooter({
         </button>
       </div>
 
-      <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-mute">
-        step <b className="text-ink font-medium">{String(step + 1).padStart(2, '0')}</b> of{' '}
-        {String(total).padStart(2, '0')} ·{' '}
-        <b className="text-ink font-medium">autosaved</b> in browser
+      <div className="flex flex-col items-center gap-0.5">
+        <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-mute">
+          step <b className="text-ink font-medium">{String(step + 1).padStart(2, '0')}</b> of{' '}
+          {String(total).padStart(2, '0')} ·{' '}
+          <b className="text-ink font-medium">autosaved</b>
+        </div>
+        {answers && estimated > 0 && (
+          <div className="flex items-center gap-1.5 font-mono text-[10px] text-ink-mute">
+            <RiFileTextLine className="w-3 h-3" />
+            <span>Estimated output:</span>
+            <span className={cn(
+              'font-semibold transition-all duration-300',
+              isGenerate ? 'text-cobalt' : 'text-ink',
+            )}>
+              ~{estimated} lines
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-[14px]">
-        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-mute hidden sm:block">
-          ⌘ + ↵ to continue
+        <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-mute hidden sm:block select-none">
+          {isGenerate ? '⌘ + ↵ generate' : '⌘ + → continue'}
         </span>
         <button
           onClick={onContinue}

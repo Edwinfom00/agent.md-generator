@@ -98,6 +98,28 @@ export function WizardShell() {
     }
   }, [answers, currentStep, wizardStep])
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isMod = e.metaKey || e.ctrlKey
+      if (!isMod) return
+
+      if (e.key === 'ArrowRight' && wizardStep === 'questions') {
+        e.preventDefault()
+        if (isStepValid()) handleNext()
+      }
+      if (e.key === 'ArrowLeft' && (wizardStep === 'questions' || wizardStep === 'review')) {
+        e.preventDefault()
+        handleBack()
+      }
+      if (e.key === 'Enter' && wizardStep === 'review') {
+        e.preventDefault()
+        handleGenerate()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [wizardStep, currentStep, answers])
+
   function handleGoToTemplates() {
     setWizardStep('template')
   }
@@ -377,6 +399,7 @@ export function WizardShell() {
         canContinue={isReview ? true : isStepValid()}
         onBack={handleBack}
         onContinue={isReview ? handleGenerate : handleNext}
+        answers={answers}
       />
       {showHistory && <HistoryDrawer entries={historyEntries} onClose={() => setShowHistory(false)} />}
     </div>

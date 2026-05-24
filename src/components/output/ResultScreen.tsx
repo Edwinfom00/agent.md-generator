@@ -79,6 +79,10 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
   const [chatLoading, setChatLoading] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [pendingContent, setPendingContent] = useState<string | null>(null)
+  const [showFabTooltip, setShowFabTooltip] = useState(false)
+  const [variantContent, setVariantContent] = useState<string | null>(null)
+  const [variantLoading, setVariantLoading] = useState(false)
+  const [abView, setAbView] = useState<'A' | 'B'>('A')
   
   const downloadMenuRef = useRef<HTMLDivElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -116,6 +120,12 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, chatLoading])
+
+  useEffect(() => {
+    const show = setTimeout(() => setShowFabTooltip(true), 3000)
+    const hide = setTimeout(() => setShowFabTooltip(false), 10000)
+    return () => { clearTimeout(show); clearTimeout(hide) }
+  }, [])
 
   const handleChat = useCallback(async (instruction: string) => {
     if (!instruction.trim() || chatLoading || pendingContent) return
@@ -163,6 +173,28 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleChat(chatInput)
+    }
+  }
+
+  async function handleGenerateVariant() {
+    if (variantLoading) return
+    setVariantLoading(true)
+    setVariantContent(null)
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers, variant: true }),
+      })
+      const data = await res.json() as { content?: string; error?: string }
+      if (data.content) {
+        setVariantContent(data.content)
+        setAbView('B')
+      }
+    } catch {
+      // silently fail — user can retry
+    } finally {
+      setVariantLoading(false)
     }
   }
 
@@ -219,37 +251,37 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
       )}
 
       <div className="flex-1 grid overflow-hidden min-h-0" style={{ gridTemplateColumns: '380px 1fr' }}>
-      <aside className="border-r border-rule bg-paper flex flex-col gap-7 p-12 overflow-y-auto">
-          <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-mute flex items-center gap-2">
-            <span className="text-cobalt" style={{ fontFamily: 'var(--font-instrument-serif)' }}>↳</span>
-            generated
-          </span>
+      <aside className="border-r border-rule bg-paper flex flex-col gap-6 p-10 overflow-y-auto">
+          <div>
+            <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-mute flex items-center gap-2">
+              <span className="text-cobalt" style={{ fontFamily: 'var(--font-instrument-serif)' }}>↳</span>
+              generated
+            </span>
+            <h2
+              className="text-[46px] leading-[0.98] tracking-[-0.02em] mt-2"
+              style={{ fontFamily: 'var(--font-instrument-serif)' }}
+            >
+              Your <em className="text-cobalt italic">AGENT.md</em><br />is ready.
+            </h2>
+            <p className="text-[13px] text-ink-2 leading-normal mt-3">
+              {lineCount} lines · {(byteCount / 1000).toFixed(1)} kb
+            </p>
+          </div>
 
-          <h2
-            className="text-[52px] leading-[0.98] tracking-[-0.02em]"
-            style={{ fontFamily: 'var(--font-instrument-serif)' }}
-          >
-            Your <em className="text-cobalt italic">AGENT.md</em><br />is ready.
-          </h2>
-
-          <p className="text-[15px] text-ink-2 leading-normal">
-            {lineCount} lines · {(byteCount / 1000).toFixed(1)} kb. Drop this at the root of your repo as{' '}
-            <code className="font-mono text-[13px] bg-paper-deep px-1.5 py-0.5 rounded-[3px]">AGENT.md</code>
-            {' '}— your AI assistant will read it before every reply.
-          </p>
-
-          <div className="flex flex-col gap-2.5">
+          {/* ── Export group (primary) ── */}
+          <div className="flex flex-col gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-mute">Export</span>
             <div className="relative" ref={downloadMenuRef}>
               <button
                 onClick={() => setShowDownloadMenu(v => !v)}
-                className="inline-flex items-center gap-2.5 px-5.5 py-3.5 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full bg-cobalt border border-cobalt text-white hover:bg-cobalt-deep transition-colors w-full"
+                className="inline-flex items-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full bg-cobalt border border-cobalt text-white hover:bg-cobalt-deep transition-colors w-full"
               >
                 <RiDownloadLine className="w-4 h-4" />
                 Download as...
                 <RiArrowDownSLine className={cn('w-4 h-4 ml-auto transition-transform duration-150', showDownloadMenu && 'rotate-180')} />
               </button>
               {showDownloadMenu && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-paper border border-rule rounded-md shadow-sm z-10 overflow-hidden">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-paper border border-rule rounded-md shadow-md z-10 overflow-hidden">
                   {OUTPUT_FORMATS.map(format => (
                     <button
                       key={format.filename}
@@ -269,82 +301,111 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
 
             <button
               onClick={handleCopy}
-              className="inline-flex items-center gap-2.5 px-5.5 py-3.5 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
+              className="inline-flex items-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
             >
-              {copied ? <RiCheckLine className="w-4 h-4" /> : <RiFileCopyLine className="w-4 h-4" />}
-              {copied ? 'Copied' : 'Copy to clipboard'}
-            </button>
-            <button
-              onClick={handleShare}
-              className="inline-flex items-center gap-2.5 px-5.5 py-3.5 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
-            >
-              {shared ? <RiCheckLine className="w-4 h-4" /> : <RiShareLine className="w-4 h-4" />}
-              {shared ? 'Link copied' : 'Share link'}
-            </button>
-            <button
-              onClick={onReset}
-              className="inline-flex items-center gap-2.5 px-5.5 py-3.5 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
-            >
-              <RiArrowLeftLine className="w-4 h-4" />
-              Start over
+              {copied ? <RiCheckLine className="w-4 h-4 text-emerald-600" /> : <RiFileCopyLine className="w-4 h-4" />}
+              {copied ? 'Copied!' : 'Copy to clipboard'}
             </button>
           </div>
 
-          <div className="border border-rule bg-paper-soft rounded-md p-5 flex flex-col gap-3">
+          {/* ── More group (secondary) ── */}
+          <div className="flex flex-col gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-mute">More</span>
+            <div className="flex gap-2">
+              <button
+                onClick={handleShare}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
+              >
+                {shared ? <RiCheckLine className="w-3.5 h-3.5" /> : <RiShareLine className="w-3.5 h-3.5" />}
+                {shared ? 'Copied' : 'Share link'}
+              </button>
+              <button
+                onClick={onReset}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
+              >
+                <RiArrowLeftLine className="w-3.5 h-3.5" />
+                Start over
+              </button>
+            </div>
+          </div>
+
+          {/* ── Coverage widget ── */}
+          <div className="border border-rule bg-paper-soft rounded-md p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute">Coverage</span>
-              <span className="font-mono text-[13px] font-medium text-ink">{score.found}/{score.total}</span>
+              <span className={cn(
+                'font-mono text-[12px] font-bold',
+                score.found === score.total ? 'text-emerald-600' : score.found >= score.total * 0.7 ? 'text-amber-600' : 'text-signal',
+              )}>
+                {score.found}/{score.total}
+              </span>
             </div>
-            <div className="w-full h-1 bg-paper-deep rounded-full overflow-hidden">
+            <div className="w-full h-1.5 bg-paper-deep rounded-full overflow-hidden">
               <div
-                className="h-full bg-cobalt rounded-full transition-all duration-500"
+                className={cn(
+                  'h-full rounded-full transition-all duration-700',
+                  score.found === score.total ? 'bg-emerald-500' : score.found >= score.total * 0.7 ? 'bg-amber-500' : 'bg-cobalt',
+                )}
                 style={{ width: `${(score.found / score.total) * 100}%` }}
               />
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid grid-cols-2 gap-1">
               {score.sections.map(s => (
                 <span
                   key={s.label}
                   className={cn(
-                    'font-mono text-[10px] px-1.5 py-0.5 rounded-[3px]',
+                    'font-mono text-[10px] px-2 py-1 rounded-[3px] flex items-center gap-1.5',
                     s.present
-                      ? 'bg-cobalt/10 text-cobalt-deep'
-                      : 'bg-paper-deep text-ink-mute line-through',
+                      ? 'bg-cobalt/8 text-cobalt-deep'
+                      : 'bg-paper-deep text-ink-mute',
                   )}
                 >
-                  {s.label}
+                  {s.present
+                    ? <RiCheckLine className="w-3 h-3 text-emerald-500 shrink-0" />
+                    : <RiCloseLine className="w-3 h-3 text-ink-mute/50 shrink-0" />
+                  }
+                  <span className={cn(!s.present && 'line-through opacity-60')}>{s.label}</span>
                 </span>
               ))}
             </div>
           </div>
 
-          <div className="border border-rule bg-paper-soft rounded-md p-5 flex flex-col gap-3">
-            {[
-              { k: 'Name', v: name },
-              { k: 'Type', v: type, tag: true },
-              { k: 'Stack', v: stack.split(', ').slice(0, 3).join(' · ') },
-              { k: 'AI providers', v: aiProviders },
-              { k: 'Philosophy', v: philosophy },
-              { k: 'Constraints', v: `${constraintCount} active` },
-            ].map(({ k, v, tag }) => (
-              <div
-                key={k}
-                className="flex justify-between items-baseline gap-3 text-[13px] border-b border-dashed border-rule-soft pb-3 last:border-b-0 last:pb-0"
-              >
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute shrink-0">{k}</span>
-                {tag ? (
-                  <span className="bg-cobalt-soft text-cobalt-deep px-2 py-0.5 rounded-[3px] font-mono text-[11px]">{v}</span>
-                ) : (
-                  <span className="font-medium text-ink text-right">{v}</span>
-                )}
-              </div>
-            ))}
+          {/* ── Metadata grid ── */}
+          <div className="border border-rule bg-paper-soft rounded-md p-4">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              {[
+                { k: 'Name', v: name },
+                { k: 'Type', v: type, tag: true },
+                { k: 'Stack', v: stack.split(', ').slice(0, 3).join(' · ') },
+                { k: 'AI', v: aiProviders },
+                { k: 'Philosophy', v: philosophy },
+                { k: 'Constraints', v: `${constraintCount} active` },
+              ].map(({ k, v, tag }) => (
+                <div key={k} className="flex flex-col gap-0.5">
+                  <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-mute">{k}</span>
+                  {tag ? (
+                    <span className="bg-cobalt-soft text-cobalt-deep px-1.5 py-0.5 rounded-[3px] font-mono text-[10px] self-start">{v || '—'}</span>
+                  ) : (
+                    <span className="font-medium text-ink text-[12px] truncate">{v || '—'}</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
-          <p className="font-mono text-[11px] text-ink-mute leading-relaxed mt-auto">
+          {/* ── What's next tip ── */}
+          <div className="border border-cobalt/20 bg-cobalt-soft/30 rounded-md p-4 flex flex-col gap-1.5 mt-auto">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-cobalt-deep font-semibold">What's next?</span>
+            <p className="font-mono text-[11px] text-ink-2 leading-[1.6]">
+              Drop <code className="bg-white px-1 rounded text-cobalt-deep">AGENT.md</code> at your repo root — AI assistants read it automatically before writing code.
+            </p>
+          </div>
+
+          <p className="font-mono text-[10px] text-ink-mute leading-relaxed">
             Nothing was sent to a server. All answers stayed in your browser.
           </p>
         </aside>
+
 
         <main className="bg-paper-soft flex flex-col gap-4 p-12 overflow-hidden relative">
           <div className="flex-1 bg-white border border-rule rounded-lg flex flex-col overflow-hidden min-h-0">
@@ -360,6 +421,34 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
               </span>
 
               <div className="flex items-center gap-4">
+                {/* A/B Compare toggle — shown when variant exists */}
+                {variantContent && (
+                  <div className="flex items-center gap-1 bg-paper-deep rounded-full p-1">
+                    <button
+                      onClick={() => setAbView('A')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
+                        abView === 'A'
+                          ? 'bg-white text-ink shadow-sm border border-rule'
+                          : 'text-ink-mute hover:text-ink',
+                      )}
+                    >
+                      A — Original
+                    </button>
+                    <button
+                      onClick={() => setAbView('B')}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
+                        abView === 'B'
+                          ? 'bg-cobalt text-white shadow-sm'
+                          : 'text-ink-mute hover:text-ink',
+                      )}
+                    >
+                      B — Variant
+                    </button>
+                  </div>
+                )}
+
                 {!isEditing && (
                   <div className="flex items-center gap-1 bg-paper-deep rounded-full p-1">
                     <button
@@ -402,6 +491,26 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
                   {isEditing ? 'Done' : 'Edit'}
                 </button>
 
+                {/* Generate variant button */}
+                <button
+                  onClick={handleGenerateVariant}
+                  disabled={variantLoading}
+                  title="Generate a creative variant (temperature 0.7)"
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all border',
+                    variantContent
+                      ? 'border-cobalt/40 text-cobalt bg-cobalt-soft/40'
+                      : 'border-rule text-ink-mute hover:text-ink hover:border-ink',
+                    variantLoading && 'opacity-60 cursor-not-allowed',
+                  )}
+                >
+                  {variantLoading
+                    ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin-slow" />
+                    : <RiSparklingLine className="w-3 h-3" />
+                  }
+                  {variantLoading ? 'Generating…' : variantContent ? 'Variant ready' : 'Generate variant'}
+                </button>
+
                 <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute flex gap-3.5">
                   <span>{byteCount.toLocaleString()} bytes</span>
                   <span className="text-cobalt">● synced</span>
@@ -409,14 +518,18 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
               </div>
             </div>
 
-            {isEditing ? (
-              <textarea
-                value={editedContent}
-                onChange={e => setEditedContent(e.target.value)}
-                className="flex-1 w-full px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink resize-none outline-none bg-white"
-                spellCheck={false}
-              />
-            ) : view === 'preview' ? (
+            {(() => {
+              const displayContent = abView === 'B' && variantContent ? variantContent : editedContent
+              const displayLines = displayContent.split('\n')
+              return isEditing ? (
+                <textarea
+                  value={editedContent}
+                  onChange={e => setEditedContent(e.target.value)}
+                  className="flex-1 w-full px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink resize-none outline-none bg-white"
+                  spellCheck={false}
+                />
+              ) : view === 'preview' ? (
+
               <div className="flex-1 overflow-auto px-10 py-8">
                 <div className="max-w-[720px] mx-auto prose-agent">
                   <ReactMarkdown
@@ -517,7 +630,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
                       ),
                     }}
                   >
-                    {editedContent}
+                    {displayContent}
                   </ReactMarkdown>
                 </div>
               </div>
@@ -528,7 +641,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
                   className="bg-paper-soft border-r border-rule px-3.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink-mute text-right select-none overflow-hidden shrink-0 w-14"
                   style={{ scrollbarWidth: 'none' }}
                 >
-                  {lines.map((_, i) => (
+                  {displayLines.map((_, i) => (
                     <div key={i}>{i + 1}</div>
                   ))}
                 </div>
@@ -537,15 +650,45 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
                   ref={codeRef}
                   className="flex-1 px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] overflow-auto"
                 >
-                  {lines.map((line, i) => (
-                    <div key={i} className={lineClass(line)}>
-                      {line || ' '}
-                    </div>
-                  ))}
+                  {displayLines.map((line, i) => {
+                    const isSection = line.startsWith('## ')
+                    const sectionName = isSection ? line.replace(/^## /, '').trim() : ''
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          lineClass(line),
+                          isSection && 'group/section relative flex items-center gap-2 pr-2',
+                        )}
+                      >
+                        <span className="flex-1">{line || ' '}</span>
+                        {isSection && (
+                          <button
+                            title={`Improve "${sectionName}" section with AI`}
+                            onClick={() => {
+                              setChatInput(`Improve and enrich the ## ${sectionName} section with more specific, detailed content`)
+                              setChatOpen(true)
+                              setShowFabTooltip(false)
+                            }}
+                            className={cn(
+                              'opacity-0 group-hover/section:opacity-100 transition-all duration-150',
+                              'inline-flex items-center gap-1 px-2 py-0.5 rounded border border-cobalt/30',
+                              'bg-cobalt-soft text-cobalt-deep text-[10px] font-mono uppercase tracking-wider',
+                              'hover:bg-cobalt hover:text-white hover:border-cobalt cursor-pointer shrink-0',
+                            )}
+                          >
+                            <RiSparklingLine className="w-3 h-3" />
+                            Boost
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
-            )}
-          </div>
+            )
+          })()}
+        </div>
 
           {/* ── Floating chat FAB + panel ─────────────────── */}
           <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3.5" style={{ zIndex: 20 }}>
@@ -772,10 +915,22 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
               </div>
             )}
 
+            {/* Onboarding tooltip — shown once after 3s */}
+            {showFabTooltip && !chatOpen && chatMessages.length === 0 && (
+              <div className="animate-fade-up w-[220px] bg-ink text-paper rounded-xl px-4 py-3 shadow-2xl pointer-events-none">
+                <p className="font-mono text-[11px] leading-[1.6] text-center">
+                  <span className="text-cobalt-soft font-semibold">✨ AI Co-Pilot</span>
+                  <br />
+                  Ask me to add, remove, or rewrite any section of your AGENT.md
+                </p>
+                <div className="absolute bottom-[-6px] right-[22px] w-3 h-3 bg-ink rotate-45" />
+              </div>
+            )}
+
             {/* FAB */}
             <button
               id="result-chat-fab"
-              onClick={() => setChatOpen(v => !v)}
+              onClick={() => { setChatOpen(v => !v); setShowFabTooltip(false) }}
               title={chatOpen ? 'Close chat' : 'Refine with AI'}
               className={cn(
                 'w-13 h-13 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 relative group cursor-pointer border border-white/10 outline-none',

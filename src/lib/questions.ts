@@ -66,6 +66,7 @@ export const QUESTIONS: Question[] = [
     category: 'Identity',
     question: 'Describe your project in 2-3 sentences.',
     hint: 'What does it do? Who is it for? What problem does it solve?',
+    coaching: 'Impacts the ## Overview section. A rich description gives the AI full context to write more accurate conventions. Aim for 80+ characters.',
     type: 'textarea',
     placeholder:
       'e.g. Preflight is a VS Code extension that helps developers ship cleaner code by detecting debug statements, tracking TODOs with deadlines, and generating AI-powered commit messages...',
@@ -77,6 +78,7 @@ export const QUESTIONS: Question[] = [
     category: 'Tech Stack',
     question: 'What is your primary tech stack?',
     hint: 'Select all that apply to your project',
+    coaching: 'Impacts ## Tech Stack and ## Conventions. Each technology adds framework-specific rules (e.g. Next.js → Server Components, Prisma → ORM patterns). Select all relevant tools.',
     type: 'multiselect',
     required: true,
     options: [
@@ -151,6 +153,7 @@ export const QUESTIONS: Question[] = [
     category: 'Architecture',
     question: 'Describe your folder structure.',
     hint: 'List the main folders and what they contain. The AI will use this to enforce conventions.',
+    coaching: 'Impacts the ## Folder Structure section directly. A detailed tree prevents the AI from creating files in wrong places. The more specific, the better.',
     type: 'textarea',
     placeholder: `src/
   app/        <- Next.js App Router pages
@@ -166,6 +169,7 @@ export const QUESTIONS: Question[] = [
     category: 'Architecture',
     question: 'What are your most important coding conventions?',
     hint: 'Rules the AI must always follow when writing code for this project',
+    coaching: 'These become enforced rules in the ## Coding Conventions section. More selections = more specific constraints = fewer AI mistakes. Pick at least 3.',
     type: 'multiselect',
     required: true,
     options: [
@@ -206,6 +210,7 @@ export const QUESTIONS: Question[] = [
     category: 'Constraints',
     question: 'What are the hard constraints for this project?',
     hint: 'Things the AI must NEVER do in this project',
+    coaching: 'These become a strict ## Hard Constraints table — the most critical section. Each selected constraint is a guardrail the AI will respect on every response.',
     type: 'multiselect',
     required: true,
     options: [
@@ -225,6 +230,7 @@ export const QUESTIONS: Question[] = [
     category: 'Constraints',
     question: 'What is your development philosophy?',
     hint: 'How should the AI approach building features?',
+    coaching: 'Shapes the ## Development Philosophy section. This single choice influences how the AI balances speed vs. quality on every decision it makes.',
     type: 'select',
     required: true,
     options: [

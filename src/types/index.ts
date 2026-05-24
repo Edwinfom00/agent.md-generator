@@ -13,6 +13,7 @@ export interface Question {
   category: string
   question: string
   hint?: string
+  coaching?: string
   type: QuestionType
   options?: QuestionOption[]
   placeholder?: string
@@ -34,6 +35,7 @@ export interface GenerateRequest {
   mode?: 'update'
   existingContent?: string
   changeDescription?: string
+  variant?: boolean
 }
 
 export interface GenerateResponse {

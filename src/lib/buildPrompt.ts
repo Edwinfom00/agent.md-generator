@@ -29,8 +29,9 @@ export function buildPrompt(answers: WizardAnswers): string {
   const constraints = getLabel('constraints', answers['constraints'] ?? [])
   const devPhilosophy = getLabel('dev_philosophy', answers['dev_philosophy'] ?? '')
   const extraContext = answers['extra_context'] as string ?? ''
+  const initProject = answers['initialize_project'] === 'yes'
 
-  return `You are an expert software architect. Generate a complete, detailed, and production-quality AGENT.md file for the following project.
+  let systemPrompt = `You are an expert software architect. Generate a complete, detailed, and production-quality AGENT.md file for the following project.
 
 The AGENT.md is a comprehensive engineering README that will be used by AI coding assistants (like Claude, GPT-4, Kiro, Cursor) to understand the project deeply and write code that perfectly matches the project's conventions, architecture, and constraints.
 
@@ -85,6 +86,45 @@ Rules for the output:
 - Use tables where they add clarity
 - Keep the tone direct and professional
 - No filler content — every sentence must be actionable
-- The document should be long enough to be genuinely useful (aim for 600-1000 lines)
-- Output ONLY the Markdown content, no preamble, no explanation`
+- The document should be long enough to be genuinely useful (aim for 600-1000 lines)`
+
+  if (initProject) {
+    systemPrompt += `
+
+================================================================================
+CRITICAL WORKSPACE INITIALIZATION FILES REQUESTED
+================================================================================
+Because the user selected "Yes" to project initialization, in addition to the AGENT.md file, you MUST generate two other files: ROADMAP.md and PROMPTS.md.
+You MUST output ALL THREE FILES inside a single response, separated EXACTLY by these custom line-delimiters (do not wrap the delimiters in code blocks, write them as plain text on their own lines):
+
+===AGENT_MD===
+[Place the complete AGENT.md text here]
+===ROADMAP_MD===
+[Place the complete, highly detailed ROADMAP.md text here]
+===PROMPTS_MD===
+[Place the complete, advanced PROMPTS.md text here]
+
+--------------------------------------------------------------------------------
+SPECIFIC FILE REQUIREMENTS:
+--------------------------------------------------------------------------------
+
+1. ROADMAP.md:
+   - Must be a highly detailed, highly technical project implementation roadmap.
+   - Break down the target product features into clear, logical milestones and phases.
+   - For each feature/task, list specific architectural guidelines, implementation checklists, and structural changes.
+   - The roadmap must be extremely robust and powerful, specifically designed for an AI Coding Agent to read, parse, and execute cleanly step-by-step.
+
+2. PROMPTS.md:
+   - Provide a set of advanced, production-ready engineering prompt blueprints for each and every feature or step defined in the ROADMAP.md.
+   - Every single feature prompt MUST start with a phrase like:
+     "Read the AGENT.md/AGENTS.md file in the root directory and follow its rules strictly."
+   - Provide highly precise, well-structured prompt blueprints that guide the AI to implement the feature exactly according to the conventions.
+   - CRITICAL: For each prompt, include a section called "Session-Saving Tip" that advises the user to start a new chat/agent session for that feature, pointing out that because AGENT.md contains all the context and constraints of the codebase, clean independent chat sessions will save massive amounts of tokens, prevent prompt/context dilution, and guarantee high-quality execution.
+
+--------------------------------------------------------------------------------
+`
+  }
+
+  systemPrompt += `\n- Output ONLY the Markdown content, no preamble, no explanation`
+  return systemPrompt
 }

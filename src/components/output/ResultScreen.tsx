@@ -1,11 +1,17 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { WizardAnswers } from '@/types'
 import { QUESTIONS } from '@/lib/questions'
-import { OUTPUT_FORMATS } from '@/lib/formatOutput'
+import JSZip from 'jszip'
+import {
+  OUTPUT_FORMATS,
+  generateCursorMdc,
+  generateClaudeSettings,
+  generateSetupScript,
+} from '@/lib/formatOutput'
 import { scoreOutput } from '@/lib/scoreOutput'
 import { encodeConfig } from '@/lib/shareConfig'
 import { refineChatMessage } from '@/lib/chatOutput'
@@ -29,6 +35,9 @@ import {
   RiUser3Line,
   RiCheckDoubleLine,
   RiAlertLine,
+  RiFileTextLine,
+  RiSettings3Line,
+  RiTerminalLine,
 } from 'react-icons/ri'
 import { cn } from '@/lib/cn'
 
@@ -67,8 +76,31 @@ function download(content: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+function parseDelimitedContent(text: string): { agent: string; roadmap: string; prompts: string } {
+  if (text.includes('===AGENT_MD===') || text.includes('===ROADMAP_MD===') || text.includes('===PROMPTS_MD===')) {
+    const agentMatch = text.match(/===AGENT_MD===([\s\S]*?)(===ROADMAP_MD===|===PROMPTS_MD===|$)/)
+    const roadmapMatch = text.match(/===ROADMAP_MD===([\s\S]*?)(===AGENT_MD===|===PROMPTS_MD===|$)/)
+    const promptsMatch = text.match(/===PROMPTS_MD===([\s\S]*?)(===AGENT_MD===|===ROADMAP_MD===|$)/)
+
+    return {
+      agent: (agentMatch?.[1] ?? '').trim(),
+      roadmap: (roadmapMatch?.[1] ?? '').trim(),
+      prompts: (promptsMatch?.[1] ?? '').trim(),
+    }
+  }
+  return {
+    agent: text.trim(),
+    roadmap: '',
+    prompts: '',
+  }
+}
+
 export function ResultScreen({ content, answers, warnings, onReset, onRegenerate }: ResultScreenProps) {
-  const [editedContent, setEditedContent] = useState(content)
+  const initialParsed = parseDelimitedContent(content)
+  const [editedContent, setEditedContent] = useState(initialParsed.agent)
+  const [roadmapContent, setRoadmapContent] = useState(initialParsed.roadmap)
+  const [promptsContent, setPromptsContent] = useState(initialParsed.prompts)
+  
   const [isEditing, setIsEditing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
@@ -83,6 +115,58 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
   const [variantContent, setVariantContent] = useState<string | null>(null)
   const [variantLoading, setVariantLoading] = useState(false)
   const [abView, setAbView] = useState<'A' | 'B'>('A')
+  const [activeTab, setActiveTab] = useState<'agent' | 'cursor' | 'claude' | 'setup' | 'roadmap' | 'prompts'>('agent')
+
+  useEffect(() => {
+    const parsed = parseDelimitedContent(content)
+    setEditedContent(parsed.agent)
+    setRoadmapContent(parsed.roadmap)
+    setPromptsContent(parsed.prompts)
+  }, [content])
+
+  const handleDownloadZip = useCallback(async () => {
+    const zip = new JSZip()
+    const projectName = (answers['project_name'] as string) || 'my-project'
+    const folderName = projectName.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    const stack = answers['tech_stack'] ? getLabel('tech_stack', answers['tech_stack']) : ''
+
+    const parsedVariant = variantContent ? parseDelimitedContent(variantContent) : null
+    const coreContent = abView === 'B' && parsedVariant ? parsedVariant.agent : editedContent
+    const targetRoadmap = abView === 'B' && parsedVariant ? parsedVariant.roadmap : roadmapContent
+    const targetPrompts = abView === 'B' && parsedVariant ? parsedVariant.prompts : promptsContent
+
+    const cursorMdc = generateCursorMdc(projectName, stack, coreContent)
+    const claudeSettings = generateClaudeSettings(answers)
+    const setupScript = generateSetupScript(projectName, stack, coreContent, claudeSettings, targetRoadmap, targetPrompts)
+
+    // Add files to zip structure
+    zip.file('AGENT.md', coreContent)
+    zip.file('CLAUDE.md', coreContent)
+    zip.file('.cursor/rules/web-agent.mdc', cursorMdc)
+    zip.file('.claude/settings.json', claudeSettings)
+    zip.file('setup-agent.sh', setupScript)
+
+    if (targetRoadmap) {
+      zip.file('ROADMAP.md', targetRoadmap)
+    }
+    if (targetPrompts) {
+      zip.file('PROMPTS.md', targetPrompts)
+    }
+
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${folderName}-ai-config.zip`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('ZIP generation failed:', err)
+    }
+  }, [answers, editedContent, roadmapContent, promptsContent, variantContent, abView])
   
   const downloadMenuRef = useRef<HTMLDivElement>(null)
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -90,10 +174,38 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
   const chatEndRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
 
-  const lines = editedContent.split('\n')
-  const lineCount = lines.length
-  const byteCount = new TextEncoder().encode(editedContent).length
+  const name = (answers['project_name'] as string) || '—'
+  const type = answers['project_type'] ? getLabel('project_type', answers['project_type']) : '—'
+  const stack = answers['tech_stack'] ? getLabel('tech_stack', answers['tech_stack']) : '—'
+  const aiProviders = answers['ai_providers'] ? getLabel('ai_providers', answers['ai_providers']) : '—'
+  const philosophy = answers['dev_philosophy'] ? getLabel('dev_philosophy', answers['dev_philosophy']) : '—'
+  const constraintCount = ((answers['constraints'] as string[]) ?? []).length
+
   const score = scoreOutput(editedContent)
+
+  const activeDisplayContent = useMemo(() => {
+    const parsedVariant = variantContent ? parseDelimitedContent(variantContent) : null
+    const activeAgent = abView === 'B' && parsedVariant ? parsedVariant.agent : editedContent
+    const activeRoadmap = abView === 'B' && parsedVariant ? parsedVariant.roadmap : roadmapContent
+    const activePrompts = abView === 'B' && parsedVariant ? parsedVariant.prompts : promptsContent
+
+    if (activeTab === 'cursor') {
+      return generateCursorMdc(name, stack, activeAgent)
+    } else if (activeTab === 'claude') {
+      return generateClaudeSettings(answers)
+    } else if (activeTab === 'setup') {
+      return generateSetupScript(name, stack, activeAgent, generateClaudeSettings(answers), activeRoadmap, activePrompts)
+    } else if (activeTab === 'roadmap') {
+      return activeRoadmap
+    } else if (activeTab === 'prompts') {
+      return activePrompts
+    }
+    return activeAgent
+  }, [activeTab, editedContent, roadmapContent, promptsContent, variantContent, abView, answers, name, stack])
+
+  const displayLines = useMemo(() => activeDisplayContent.split('\n'), [activeDisplayContent])
+  const lineCount = displayLines.length
+  const byteCount = new TextEncoder().encode(activeDisplayContent).length
 
   const hunks = pendingContent ? getDiffHunks(computeLineDiff(editedContent, pendingContent)) : []
 
@@ -134,7 +246,10 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
     setChatInput('')
     setChatLoading(true)
 
-    const result = await refineChatMessage(editedContent, instruction.trim())
+    // Select the content to edit based on active tab
+    const activeContent = activeTab === 'roadmap' ? roadmapContent : activeTab === 'prompts' ? promptsContent : editedContent
+
+    const result = await refineChatMessage(activeContent, instruction.trim())
     setChatLoading(false)
 
     if (result.error || !result.content) {
@@ -149,17 +264,23 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
         { role: 'assistant', text: '✨ I have prepared a draft update. Please review the proposed changes below and confirm them.' },
       ])
     }
-  }, [editedContent, chatLoading, pendingContent])
+  }, [editedContent, roadmapContent, promptsContent, activeTab, chatLoading, pendingContent])
 
   const handleApplyPending = useCallback(() => {
     if (!pendingContent) return
-    setEditedContent(pendingContent)
+    if (activeTab === 'roadmap') {
+      setRoadmapContent(pendingContent)
+    } else if (activeTab === 'prompts') {
+      setPromptsContent(pendingContent)
+    } else {
+      setEditedContent(pendingContent)
+    }
     setPendingContent(null)
     setChatMessages(prev => [
       ...prev,
       { role: 'assistant', text: '✅ Proposed changes successfully applied!' }
     ])
-  }, [pendingContent])
+  }, [pendingContent, activeTab])
 
   const handleDiscardPending = useCallback(() => {
     setPendingContent(null)
@@ -199,7 +320,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(editedContent)
+    await navigator.clipboard.writeText(activeDisplayContent)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -210,13 +331,6 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
     setShared(true)
     setTimeout(() => setShared(false), 2000)
   }
-
-  const name = (answers['project_name'] as string) || '—'
-  const type = answers['project_type'] ? getLabel('project_type', answers['project_type']) : '—'
-  const stack = answers['tech_stack'] ? getLabel('tech_stack', answers['tech_stack']) : '—'
-  const aiProviders = answers['ai_providers'] ? getLabel('ai_providers', answers['ai_providers']) : '—'
-  const philosophy = answers['dev_philosophy'] ? getLabel('dev_philosophy', answers['dev_philosophy']) : '—'
-  const constraintCount = ((answers['constraints'] as string[]) ?? []).length
 
   function lineClass(line: string): string {
     if (line.startsWith('# ')) return 'text-ink font-semibold'
@@ -271,13 +385,22 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
           {/* ── Export group (primary) ── */}
           <div className="flex flex-col gap-2">
             <span className="font-mono text-[9px] uppercase tracking-[0.2em] text-ink-mute">Export</span>
+            
+            <button
+              onClick={handleDownloadZip}
+              className="inline-flex items-center justify-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full bg-cobalt border border-cobalt text-white hover:bg-cobalt-deep transition-colors w-full cursor-pointer shadow-sm"
+            >
+              <RiDownloadLine className="w-4 h-4" />
+              Download Workspace ZIP
+            </button>
+
             <div className="relative" ref={downloadMenuRef}>
               <button
                 onClick={() => setShowDownloadMenu(v => !v)}
-                className="inline-flex items-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full bg-cobalt border border-cobalt text-white hover:bg-cobalt-deep transition-colors w-full"
+                className="inline-flex items-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink hover:border-ink transition-colors w-full cursor-pointer"
               >
-                <RiDownloadLine className="w-4 h-4" />
-                Download as...
+                <RiCodeLine className="w-4 h-4 text-ink-mute" />
+                Download Individual...
                 <RiArrowDownSLine className={cn('w-4 h-4 ml-auto transition-transform duration-150', showDownloadMenu && 'rotate-180')} />
               </button>
               {showDownloadMenu && (
@@ -286,7 +409,15 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
                     <button
                       key={format.filename}
                       onClick={() => {
-                        download(editedContent, format.filename)
+                        let finalContent = editedContent
+                        const pName = (answers['project_name'] as string) || 'my-project'
+                        const stackStr = answers['tech_stack'] ? getLabel('tech_stack', answers['tech_stack']) : ''
+                        if (format.filename === '.cursorrules') {
+                          finalContent = generateCursorMdc(pName, stackStr, editedContent)
+                        } else if (format.filename === 'settings.json') {
+                          finalContent = generateClaudeSettings(answers)
+                        }
+                        download(finalContent, format.filename)
                         setShowDownloadMenu(false)
                       }}
                       className="flex items-center justify-between w-full px-4 py-3 text-left hover:bg-paper-soft transition-colors border-b border-rule last:border-b-0"
@@ -301,7 +432,7 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
 
             <button
               onClick={handleCopy}
-              className="inline-flex items-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors"
+              className="inline-flex items-center gap-2.5 px-5 py-3 font-mono text-[12px] uppercase tracking-[0.14em] rounded-full border border-rule text-ink-mute hover:border-ink hover:text-ink transition-colors cursor-pointer"
             >
               {copied ? <RiCheckLine className="w-4 h-4 text-emerald-600" /> : <RiFileCopyLine className="w-4 h-4" />}
               {copied ? 'Copied!' : 'Copy to clipboard'}
@@ -406,289 +537,489 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
           </p>
         </aside>
 
-
         <main className="bg-paper-soft flex flex-col gap-4 p-12 overflow-hidden relative">
           <div className="flex-1 bg-white border border-rule rounded-lg flex flex-col overflow-hidden min-h-0">
-            <div className="flex items-center justify-between px-5.5 py-3.5 border-b border-rule bg-paper-soft shrink-0">
-              <span className="font-mono text-[12px] text-ink flex items-center gap-2.5">
-                <span className="text-cobalt">▤</span>
-                AGENT.md
-                {isEditing && (
-                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-mute bg-paper-deep px-2 py-0.5 rounded-[3px]">
-                    editing
-                  </span>
-                )}
-              </span>
-
-              <div className="flex items-center gap-4">
-                {/* A/B Compare toggle — shown when variant exists */}
-                {variantContent && (
-                  <div className="flex items-center gap-1 bg-paper-deep rounded-full p-1">
-                    <button
-                      onClick={() => setAbView('A')}
-                      className={cn(
-                        'px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
-                        abView === 'A'
-                          ? 'bg-white text-ink shadow-sm border border-rule'
-                          : 'text-ink-mute hover:text-ink',
-                      )}
-                    >
-                      A — Original
-                    </button>
-                    <button
-                      onClick={() => setAbView('B')}
-                      className={cn(
-                        'px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
-                        abView === 'B'
-                          ? 'bg-cobalt text-white shadow-sm'
-                          : 'text-ink-mute hover:text-ink',
-                      )}
-                    >
-                      B — Variant
-                    </button>
-                  </div>
-                )}
-
-                {!isEditing && (
-                  <div className="flex items-center gap-1 bg-paper-deep rounded-full p-1">
-                    <button
-                      onClick={() => setView('preview')}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
-                        view === 'preview'
-                          ? 'bg-white text-ink shadow-sm border border-rule'
-                          : 'text-ink-mute hover:text-ink',
-                      )}
-                    >
-                      <RiEyeLine className="w-3 h-3" />
-                      Preview
-                    </button>
-                    <button
-                      onClick={() => setView('source')}
-                      className={cn(
-                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
-                        view === 'source'
-                          ? 'bg-white text-ink shadow-sm border border-rule'
-                          : 'text-ink-mute hover:text-ink',
-                      )}
-                    >
-                      <RiCodeLine className="w-3 h-3" />
-                      Source
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => setIsEditing(v => !v)}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all',
-                    isEditing
-                      ? 'bg-cobalt text-white'
-                      : 'border border-rule text-ink-mute hover:text-ink',
-                  )}
-                >
-                  <RiEditLine className="w-3 h-3" />
-                  {isEditing ? 'Done' : 'Edit'}
-                </button>
-
-                {/* Generate variant button */}
-                <button
-                  onClick={handleGenerateVariant}
-                  disabled={variantLoading}
-                  title="Generate a creative variant (temperature 0.7)"
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all border',
-                    variantContent
-                      ? 'border-cobalt/40 text-cobalt bg-cobalt-soft/40'
-                      : 'border-rule text-ink-mute hover:text-ink hover:border-ink',
-                    variantLoading && 'opacity-60 cursor-not-allowed',
-                  )}
-                >
-                  {variantLoading
-                    ? <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin-slow" />
-                    : <RiSparklingLine className="w-3 h-3" />
-                  }
-                  {variantLoading ? 'Generating…' : variantContent ? 'Variant ready' : 'Generate variant'}
-                </button>
-
-                <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute flex gap-3.5">
-                  <span>{byteCount.toLocaleString()} bytes</span>
-                  <span className="text-cobalt">● synced</span>
-                </div>
+            {/* Top Workspace Header (Unified) */}
+            <div className="flex items-center justify-between border-b border-rule bg-paper-soft shrink-0 h-13 px-5">
+              <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-ink font-semibold select-none">
+                <RiTerminalLine className="w-4 h-4 text-cobalt shrink-0" />
+                Workspace Environment
+              </div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-mute flex gap-3.5 select-none">
+                <span className="text-cobalt">● sandbox active</span>
               </div>
             </div>
 
-            {(() => {
-              const displayContent = abView === 'B' && variantContent ? variantContent : editedContent
-              const displayLines = displayContent.split('\n')
-              return isEditing ? (
-                <textarea
-                  value={editedContent}
-                  onChange={e => setEditedContent(e.target.value)}
-                  className="flex-1 w-full px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink resize-none outline-none bg-white"
-                  spellCheck={false}
-                />
-              ) : view === 'preview' ? (
-
-              <div className="flex-1 overflow-auto px-10 py-8">
-                <div className="max-w-[720px] mx-auto prose-agent">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      h1: ({ children }) => (
-                        <h1
-                          className="text-[42px] leading-[1.02] tracking-[-0.02em] text-ink mb-4 mt-0"
-                          style={{ fontFamily: 'var(--font-instrument-serif)', fontWeight: 400 }}
-                        >
-                          {children}
-                        </h1>
-                      ),
-                      h2: ({ children }) => (
-                        <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-cobalt-deep font-medium mt-8 mb-3 flex items-center gap-2">
-                          <span className="w-3 h-px bg-cobalt inline-block" />
-                          {children}
-                        </h2>
-                      ),
-                      h3: ({ children }) => (
-                        <h3 className="font-sans text-[15px] font-semibold text-ink mt-5 mb-2 tracking-[-0.005em]">
-                          {children}
-                        </h3>
-                      ),
-                      p: ({ children }) => (
-                        <p className="text-[14px] text-ink-2 leading-[1.65] mb-3">{children}</p>
-                      ),
-                      ul: ({ children }) => (
-                        <ul className="mb-4 space-y-1.5 pl-0 list-none">{children}</ul>
-                      ),
-                      ol: ({ children }) => (
-                        <ol className="mb-4 space-y-1.5 pl-0 list-none counter-reset-[item]">{children}</ol>
-                      ),
-                      li: ({ children }) => (
-                        <li className="text-[14px] text-ink-2 leading-[1.65] flex gap-2.5 items-baseline">
-                          <span className="text-cobalt shrink-0 mt-0.5">—</span>
-                          <span>{children}</span>
-                        </li>
-                      ),
-                      pre: ({ children }) => (
-                        <pre className="bg-paper-soft border border-rule rounded-md px-4 py-3 overflow-x-auto my-4 font-mono text-[12px] leading-[1.7] text-ink-2 whitespace-pre">
-                          {children}
-                        </pre>
-                      ),
-                      code: ({ children, className }) => {
-                        const isBlock = Boolean(className?.includes('language-'))
-                        if (isBlock) {
-                          return <code className="font-mono text-[12px] leading-[1.7] text-ink-2">{children}</code>
-                        }
-                        return (
-                          <code className="font-mono text-[12px] bg-paper-soft text-cobalt-deep px-1.5 py-0.5 rounded-[3px]">
-                            {children}
-                          </code>
-                        )
-                      },
-                      blockquote: ({ children }) => (
-                        <blockquote className="border-l-2 border-cobalt pl-4 my-4 text-ink-mute italic">
-                          {children}
-                        </blockquote>
-                      ),
-                      hr: () => (
-                        <hr className="border-none border-t border-rule my-6" />
-                      ),
-                      strong: ({ children }) => (
-                        <strong className="font-semibold text-ink">{children}</strong>
-                      ),
-                      a: ({ href, children }) => (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cobalt underline underline-offset-2 hover:text-cobalt-deep transition-colors"
-                        >
-                          {children}
-                        </a>
-                      ),
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-4 border border-rule rounded-md">
-                          <table className="w-full border-collapse font-mono text-[12px]">{children}</table>
-                        </div>
-                      ),
-                      thead: ({ children }) => (
-                        <thead className="bg-paper-soft">{children}</thead>
-                      ),
-                      tbody: ({ children }) => (
-                        <tbody>{children}</tbody>
-                      ),
-                      tr: ({ children }) => (
-                        <tr className="border-b border-rule last:border-b-0">{children}</tr>
-                      ),
-                      th: ({ children }) => (
-                        <th className="text-left px-3 py-2 font-medium text-ink text-[11px] uppercase tracking-[0.1em] border-r border-rule last:border-r-0">
-                          {children}
-                        </th>
-                      ),
-                      td: ({ children }) => (
-                        <td className="px-3 py-2 text-ink-2 border-r border-rule last:border-r-0">{children}</td>
-                      ),
-                    }}
+            {/* Split Content Area */}
+            <div className="flex-1 flex overflow-hidden min-h-0">
+              {/* FILE EXPLORER SIDEBAR */}
+              <aside className="w-[260px] border-r border-rule bg-paper-soft shrink-0 flex flex-col overflow-y-auto select-none">
+                <div className="p-3 font-mono text-[10px] uppercase tracking-[0.15em] text-ink-mute font-bold border-b border-rule/50 flex items-center justify-between">
+                  <span>Workspace Files</span>
+                  <span className="text-[9px] font-normal px-1.5 py-0.5 bg-paper-deep rounded text-ink/70">
+                    {name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}
+                  </span>
+                </div>
+                <div className="flex-1 py-3 px-2 font-mono text-[12px] flex flex-col gap-0.5">
+                  {/* .claude folder */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-ink-mute">
+                    <RiArrowDownSLine className="w-3.5 h-3.5 shrink-0" />
+                    <span>📁 .claude</span>
+                  </div>
+                  <button
+                    onClick={() => { setActiveTab('claude'); setIsEditing(false); }}
+                    className={cn(
+                      "flex items-center gap-2 pl-7 pr-3 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border border-transparent",
+                      activeTab === 'claude'
+                        ? "bg-cobalt-soft/50 text-cobalt-deep font-semibold"
+                        : "text-ink-2 hover:bg-paper-deep/30"
+                    )}
                   >
-                    {displayContent}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex overflow-hidden min-h-0">
-                <div
-                  ref={gutterRef}
-                  className="bg-paper-soft border-r border-rule px-3.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink-mute text-right select-none overflow-hidden shrink-0 w-14"
-                  style={{ scrollbarWidth: 'none' }}
-                >
-                  {displayLines.map((_, i) => (
-                    <div key={i}>{i + 1}</div>
-                  ))}
-                </div>
+                    <RiSettings3Line className="w-3.5 h-3.5 shrink-0 text-amber-500" />
+                    <span>settings.json</span>
+                  </button>
 
-                <div
-                  ref={codeRef}
-                  className="flex-1 px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] overflow-auto"
-                >
-                  {displayLines.map((line, i) => {
-                    const isSection = line.startsWith('## ')
-                    const sectionName = isSection ? line.replace(/^## /, '').trim() : ''
-                    return (
-                      <div
-                        key={i}
-                        className={cn(
-                          lineClass(line),
-                          isSection && 'group/section relative flex items-center gap-2 pr-2',
+                  {/* .cursor folder */}
+                  <div className="flex items-center gap-1.5 px-2 py-1 text-ink-mute mt-1.5">
+                    <RiArrowDownSLine className="w-3.5 h-3.5 shrink-0" />
+                    <span>📁 .cursor</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 pl-6 py-1 text-ink-mute">
+                    <RiArrowDownSLine className="w-3.5 h-3.5 shrink-0" />
+                    <span>📁 rules</span>
+                  </div>
+                  <button
+                    onClick={() => { setActiveTab('cursor'); setIsEditing(false); }}
+                    className={cn(
+                      "flex items-center gap-2 pl-11 pr-3 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border border-transparent",
+                      activeTab === 'cursor'
+                        ? "bg-cobalt-soft/50 text-cobalt-deep font-semibold"
+                        : "text-ink-2 hover:bg-paper-deep/30"
+                    )}
+                  >
+                    <RiSparklingLine className="w-3.5 h-3.5 shrink-0 text-cobalt" />
+                    <span>web-agent.mdc</span>
+                  </button>
+
+                  {/* Divider line */}
+                  <div className="h-px bg-rule/50 my-2.5 mx-2" />
+
+                  {/* AGENT.md */}
+                  <button
+                    onClick={() => setActiveTab('agent')}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border-transparent",
+                      activeTab === 'agent'
+                        ? "bg-cobalt-soft/50 text-cobalt-deep font-semibold border-l-2 border-cobalt pl-[6px]"
+                        : "text-ink-2 hover:bg-paper-deep/30"
+                    )}
+                  >
+                    <RiFileTextLine className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                    <span>AGENT.md</span>
+                  </button>
+
+                  {/* CLAUDE.md */}
+                  <button
+                    onClick={() => setActiveTab('agent')}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border-transparent opacity-70",
+                      activeTab === 'agent'
+                        ? "bg-cobalt-soft/10 text-cobalt-deep font-medium border-l border-cobalt/40 pl-[7px]"
+                        : "text-ink-2 hover:bg-paper-deep/30"
+                    )}
+                  >
+                    <RiFileTextLine className="w-3.5 h-3.5 shrink-0 text-emerald-500/70" />
+                    <span className="flex items-center gap-1">
+                      CLAUDE.md
+                      <span className="text-[8px] bg-paper-deep px-1 py-0.2 rounded text-ink-mute">symlink</span>
+                    </span>
+                  </button>
+
+                  {/* Optional Roadmap */}
+                  {roadmapContent && (
+                    <button
+                      onClick={() => setActiveTab('roadmap')}
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border-transparent mt-1",
+                        activeTab === 'roadmap'
+                          ? "bg-cobalt-soft/50 text-cobalt-deep font-semibold border-l-2 border-cobalt pl-[6px]"
+                          : "text-ink-2 hover:bg-paper-deep/30"
+                      )}
+                    >
+                      <RiFileTextLine className="w-3.5 h-3.5 shrink-0 text-sky-500" />
+                      <span>ROADMAP.md</span>
+                    </button>
+                  )}
+
+                  {/* Optional Prompts */}
+                  {promptsContent && (
+                    <button
+                      onClick={() => setActiveTab('prompts')}
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border-transparent mt-1",
+                        activeTab === 'prompts'
+                          ? "bg-cobalt-soft/50 text-cobalt-deep font-semibold border-l-2 border-cobalt pl-[6px]"
+                          : "text-ink-2 hover:bg-paper-deep/30"
+                      )}
+                    >
+                      <RiFileTextLine className="w-3.5 h-3.5 shrink-0 text-purple-500" />
+                      <span>PROMPTS.md</span>
+                    </button>
+                  )}
+
+                  {/* setup-agent.sh */}
+                  <button
+                    onClick={() => { setActiveTab('setup'); setIsEditing(false); }}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1 rounded-[4px] w-full text-left transition-all cursor-pointer border-transparent mt-1",
+                      activeTab === 'setup'
+                        ? "bg-cobalt-soft/50 text-cobalt-deep font-semibold border-l-2 border-cobalt pl-[6px]"
+                        : "text-ink-2 hover:bg-paper-deep/30"
+                    )}
+                  >
+                    <RiTerminalLine className="w-3.5 h-3.5 shrink-0 text-red-500" />
+                    <span>setup-agent.sh</span>
+                  </button>
+                </div>
+              </aside>
+
+              {/* ACTIVE FILE VIEWER & EDITOR (Right Pane) */}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0 bg-white">
+                {/* Active File Header bar */}
+                <div className="flex items-center justify-between px-5.5 py-3 border-b border-rule bg-paper-soft shrink-0 h-13">
+                  <div className="flex items-center gap-2 font-mono text-[11px] text-ink select-none">
+                    {activeTab === 'agent' && (
+                      <>
+                        <RiFileTextLine className="w-4 h-4 text-emerald-500 shrink-0" />
+                        <span className="text-ink-mute">root /</span>
+                        <span className="font-semibold text-ink">AGENT.md</span>
+                      </>
+                    )}
+                    {activeTab === 'cursor' && (
+                      <>
+                        <RiSparklingLine className="w-4 h-4 text-cobalt shrink-0" />
+                        <span className="text-ink-mute">.cursor / rules /</span>
+                        <span className="font-semibold text-ink">web-agent.mdc</span>
+                      </>
+                    )}
+                    {activeTab === 'claude' && (
+                      <>
+                        <RiSettings3Line className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="text-ink-mute">.claude /</span>
+                        <span className="font-semibold text-ink">settings.json</span>
+                      </>
+                    )}
+                    {activeTab === 'setup' && (
+                      <>
+                        <RiTerminalLine className="w-4 h-4 text-red-500 shrink-0" />
+                        <span className="text-ink-mute">root /</span>
+                        <span className="font-semibold text-ink">setup-agent.sh</span>
+                      </>
+                    )}
+                    {activeTab === 'roadmap' && (
+                      <>
+                        <RiFileTextLine className="w-4 h-4 text-sky-500 shrink-0" />
+                        <span className="text-ink-mute">root /</span>
+                        <span className="font-semibold text-ink">ROADMAP.md</span>
+                      </>
+                    )}
+                    {activeTab === 'prompts' && (
+                      <>
+                        <RiFileTextLine className="w-4 h-4 text-purple-500 shrink-0" />
+                        <span className="text-ink-mute">root /</span>
+                        <span className="font-semibold text-ink">PROMPTS.md</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {(activeTab === 'agent' || activeTab === 'roadmap' || activeTab === 'prompts') ? (
+                      <>
+                        {activeTab === 'agent' && variantContent && (
+                          <div className="flex items-center gap-1 bg-paper-deep rounded-full p-1 shrink-0">
+                            <button
+                              onClick={() => setAbView('A')}
+                              className={cn(
+                                'px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all cursor-pointer border border-transparent',
+                                abView === 'A'
+                                  ? 'bg-white text-ink shadow-sm border-rule'
+                                  : 'text-ink-mute hover:text-ink',
+                              )}
+                            >
+                              A — Original
+                            </button>
+                            <button
+                              onClick={() => setAbView('B')}
+                              className={cn(
+                                'px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all cursor-pointer border border-transparent',
+                                abView === 'B'
+                                  ? 'bg-cobalt text-white shadow-sm'
+                                  : 'text-ink-mute hover:text-ink',
+                              )}
+                            >
+                              B — Variant
+                            </button>
+                          </div>
                         )}
-                      >
-                        <span className="flex-1">{line || ' '}</span>
-                        {isSection && (
+
+                        {!isEditing && (
+                          <div className="flex items-center gap-1 bg-paper-deep rounded-full p-1 shrink-0">
+                            <button
+                              onClick={() => setView('preview')}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all cursor-pointer border border-transparent',
+                                view === 'preview'
+                                  ? 'bg-white text-ink shadow-sm border-rule'
+                                  : 'text-ink-mute hover:text-ink',
+                              )}
+                            >
+                              <RiEyeLine className="w-3.5 h-3.5" />
+                              Preview
+                            </button>
+                            <button
+                              onClick={() => setView('source')}
+                              className={cn(
+                                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all cursor-pointer border border-transparent',
+                                view === 'source'
+                                  ? 'bg-white text-ink shadow-sm border-rule'
+                                  : 'text-ink-mute hover:text-ink',
+                              )}
+                            >
+                              <RiCodeLine className="w-3.5 h-3.5" />
+                              Source
+                            </button>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => setIsEditing(v => !v)}
+                          className={cn(
+                            'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all border shrink-0 cursor-pointer',
+                            isEditing
+                              ? 'bg-cobalt border-cobalt text-white shadow-sm'
+                              : 'border-rule text-ink-mute hover:text-ink hover:border-ink',
+                          )}
+                        >
+                          <RiEditLine className="w-3.5 h-3.5" />
+                          {isEditing ? 'Done' : 'Edit'}
+                        </button>
+
+                        {activeTab === 'agent' && (
                           <button
-                            title={`Improve "${sectionName}" section with AI`}
-                            onClick={() => {
-                              setChatInput(`Improve and enrich the ## ${sectionName} section with more specific, detailed content`)
-                              setChatOpen(true)
-                              setShowFabTooltip(false)
-                            }}
+                            onClick={handleGenerateVariant}
+                            disabled={variantLoading}
+                            title="Generate a creative variant (temperature 0.7)"
                             className={cn(
-                              'opacity-0 group-hover/section:opacity-100 transition-all duration-150',
-                              'inline-flex items-center gap-1 px-2 py-0.5 rounded border border-cobalt/30',
-                              'bg-cobalt-soft text-cobalt-deep text-[10px] font-mono uppercase tracking-wider',
-                              'hover:bg-cobalt hover:text-white hover:border-cobalt cursor-pointer shrink-0',
+                              'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[10px] uppercase tracking-[0.14em] transition-all border shrink-0 cursor-pointer',
+                              variantContent
+                                ? 'border-cobalt/40 text-cobalt bg-cobalt-soft/40'
+                                : 'border-rule text-ink-mute hover:text-ink hover:border-ink',
+                              variantLoading && 'opacity-60 cursor-not-allowed',
                             )}
                           >
-                            <RiSparklingLine className="w-3 h-3" />
-                            Boost
+                            {variantLoading ? (
+                              <span className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin-slow" />
+                            ) : (
+                              <RiSparklingLine className="w-3.5 h-3.5" />
+                            )}
+                            {variantLoading ? 'Generating…' : variantContent ? 'Variant ready' : 'Generate variant'}
                           </button>
                         )}
-                      </div>
-                    )
-                  })}
+                      </>
+                    ) : (
+                      <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-ink-mute bg-paper-deep px-3 py-1.5 rounded-full border border-rule/50 font-medium select-none shrink-0">
+                        Read-only Config File
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Main file content body */}
+                {(() => {
+                  const isMarkdownFile = activeTab === 'agent' || activeTab === 'roadmap' || activeTab === 'prompts'
+                  const isEditable = isMarkdownFile
+                  const showPreview = isMarkdownFile && view === 'preview'
+
+                  return isEditable && isEditing ? (
+                    <textarea
+                      value={
+                        activeTab === 'agent'
+                          ? editedContent
+                          : activeTab === 'roadmap'
+                          ? roadmapContent
+                          : promptsContent
+                      }
+                      onChange={e => {
+                        const val = e.target.value
+                        if (activeTab === 'agent') setEditedContent(val)
+                        else if (activeTab === 'roadmap') setRoadmapContent(val)
+                        else if (activeTab === 'prompts') setPromptsContent(val)
+                      }}
+                      className="flex-1 w-full px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink resize-none outline-none bg-white border-none"
+                      spellCheck={false}
+                    />
+                  ) : showPreview ? (
+                    <div className="flex-1 overflow-auto px-10 py-8">
+                      <div className="max-w-[720px] mx-auto prose-agent">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            h1: ({ children }) => (
+                              <h1
+                                className="text-[42px] leading-[1.02] tracking-[-0.02em] text-ink mb-4 mt-0"
+                                style={{ fontFamily: 'var(--font-instrument-serif)', fontWeight: 400 }}
+                              >
+                                {children}
+                              </h1>
+                            ),
+                            h2: ({ children }) => (
+                              <h2 className="font-mono text-[11px] uppercase tracking-[0.18em] text-cobalt-deep font-medium mt-8 mb-3 flex items-center gap-2">
+                                <span className="w-3 h-px bg-cobalt inline-block" />
+                                {children}
+                              </h2>
+                            ),
+                            h3: ({ children }) => (
+                              <h3 className="font-sans text-[15px] font-semibold text-ink mt-5 mb-2 tracking-[-0.005em]">
+                                {children}
+                              </h3>
+                            ),
+                            p: ({ children }) => (
+                              <p className="text-[14px] text-ink-2 leading-[1.65] mb-3">{children}</p>
+                            ),
+                            ul: ({ children }) => (
+                              <ul className="mb-4 space-y-1.5 pl-0 list-none">{children}</ul>
+                            ),
+                            ol: ({ children }) => (
+                              <ol className="mb-4 space-y-1.5 pl-0 list-none counter-reset-[item]">{children}</ol>
+                            ),
+                            li: ({ children }) => (
+                              <li className="text-[14px] text-ink-2 leading-[1.65] flex gap-2.5 items-baseline">
+                                <span className="text-cobalt shrink-0 mt-0.5">—</span>
+                                <span>{children}</span>
+                              </li>
+                            ),
+                            pre: ({ children }) => (
+                              <pre className="bg-paper-soft border border-rule rounded-md px-4 py-3 overflow-x-auto my-4 font-mono text-[12px] leading-[1.7] text-ink-2 whitespace-pre">
+                                {children}
+                              </pre>
+                            ),
+                            code: ({ children, className }) => {
+                              const isBlock = Boolean(className?.includes('language-'))
+                              if (isBlock) {
+                                return <code className="font-mono text-[12px] leading-[1.7] text-ink-2">{children}</code>
+                              }
+                              return (
+                                <code className="font-mono text-[12px] bg-paper-soft text-cobalt-deep px-1.5 py-0.5 rounded-[3px]">
+                                  {children}
+                                </code>
+                              )
+                            },
+                            blockquote: ({ children }) => (
+                              <blockquote className="border-l-2 border-cobalt pl-4 my-4 text-ink-mute italic">
+                                {children}
+                              </blockquote>
+                            ),
+                            hr: () => (
+                              <hr className="border-none border-t border-rule my-6" />
+                            ),
+                            strong: ({ children }) => (
+                              <strong className="font-semibold text-ink">{children}</strong>
+                            ),
+                            a: ({ href, children }) => (
+                              <a
+                                href={href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-cobalt underline underline-offset-2 hover:text-cobalt-deep transition-colors"
+                              >
+                                {children}
+                              </a>
+                            ),
+                            table: ({ children }) => (
+                              <div className="overflow-x-auto my-4 border border-rule rounded-md">
+                                <table className="w-full border-collapse font-mono text-[12px]">{children}</table>
+                              </div>
+                            ),
+                            thead: ({ children }) => (
+                              <thead className="bg-paper-soft">{children}</thead>
+                            ),
+                            tbody: ({ children }) => (
+                              <tbody>{children}</tbody>
+                            ),
+                            tr: ({ children }) => (
+                              <tr className="border-b border-rule last:border-b-0">{children}</tr>
+                            ),
+                            th: ({ children }) => (
+                              <th className="text-left px-3 py-2 font-medium text-ink text-[11px] uppercase tracking-[0.1em] border-r border-rule last:border-r-0">
+                                {children}
+                              </th>
+                            ),
+                            td: ({ children }) => (
+                              <td className="px-3 py-2 text-ink-2 border-r border-rule last:border-r-0">{children}</td>
+                            ),
+                          }}
+                        >
+                          {activeDisplayContent}
+                        </ReactMarkdown>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex overflow-hidden min-h-0">
+                      <div
+                        ref={gutterRef}
+                        className="bg-paper-soft border-r border-rule px-3.5 py-4.5 font-mono text-[12.5px] leading-[1.7] text-ink-mute text-right select-none overflow-hidden shrink-0 w-14"
+                        style={{ scrollbarWidth: 'none' }}
+                      >
+                        {displayLines.map((_, i) => (
+                          <div key={i}>{i + 1}</div>
+                        ))}
+                      </div>
+
+                      <div
+                        ref={codeRef}
+                        className="flex-1 px-5.5 py-4.5 font-mono text-[12.5px] leading-[1.7] overflow-auto"
+                      >
+                        {displayLines.map((line, i) => {
+                          const isSection = line.startsWith('## ')
+                          const sectionName = isSection ? line.replace(/^## /, '').trim() : ''
+                          return (
+                            <div
+                              key={i}
+                              className={cn(
+                                lineClass(line),
+                                isSection && 'group/section relative flex items-center gap-2 pr-2',
+                              )}
+                            >
+                              <span className="flex-1">{line || ' '}</span>
+                              {isSection && activeTab === 'agent' && (
+                                <button
+                                  title={`Improve "${sectionName}" section with AI`}
+                                  onClick={() => {
+                                    setChatInput(`Improve and enrich the ## ${sectionName} section with more specific, detailed content`)
+                                    setChatOpen(true)
+                                    setShowFabTooltip(false)
+                                  }}
+                                  className={cn(
+                                    'opacity-0 group-hover/section:opacity-100 transition-all duration-150',
+                                    'inline-flex items-center gap-1 px-2 py-0.5 rounded border border-cobalt/30',
+                                    'bg-cobalt-soft text-cobalt-deep text-[10px] font-mono uppercase tracking-wider',
+                                    'hover:bg-cobalt hover:text-white hover:border-cobalt cursor-pointer shrink-0',
+                                  )}
+                                >
+                                  <RiSparklingLine className="w-3 h-3" />
+                                  Boost
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
-            )
-          })()}
-        </div>
+            </div>
+          </div>
 
           {/* ── Floating chat FAB + panel ─────────────────── */}
           <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3.5" style={{ zIndex: 20 }}>

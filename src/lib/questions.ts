@@ -251,6 +251,19 @@ export const QUESTIONS: Question[] = [
       'e.g. This project uses the Vercel AI SDK for all LLM calls. The API keys are stored in .env.local and never exposed to the client. The app is deployed on Vercel...',
     required: false,
   },
+  {
+    id: 'initialize_project',
+    step: 4,
+    category: 'Constraints',
+    question: 'Initialize the project with a Technical Roadmap & Prompt Blueprints?',
+    hint: 'If enabled, we will generate highly detailed ROADMAP.md and session-optimized PROMPTS.md files in addition to agent profiles.',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'yes', label: 'Yes — Generate Roadmap & Prompts', description: 'Create a comprehensive project execution plan' },
+      { value: 'no', label: 'No — Only generate AGENT.md / configs', description: 'Skip roadmap and prompts creation' },
+    ],
+  },
 ]
 
 export const TOTAL_STEPS = 4

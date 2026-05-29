@@ -1,0 +1,16 @@
+{
+  "name": "@agent-md/shared",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./lib/*": "./src/lib/*.ts",
+    "./types": "./src/types/index.ts"
+  },
+  "dependencies": {
+    "ai": "^6.0.184",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.6.0"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "agent-md-generator",
+  "version": "0.1.1",
+  "description": "Generate production-grade AGENT.md files via an interactive terminal wizard.",
+  "keywords": ["agent", "ai", "claude", "cursor", "kiro", "copilot", "cli", "generator"],
+  "homepage": "https://agent-md-generator.edwinfom.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Edwinfom00/agent.md-generator"
+  },
+  "license": "MIT",
+  "author": "Edwin Fom",
+  "engines": { "node": ">=20" },
+  "files": ["dist/cli.js", "README.md"],
+  "type": "module",
+  "bin": "./dist/cli.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@agent-md/shared": "workspace:*",
+    "@ai-sdk/deepseek": "^2.0.35",
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/xai": "^1.0.0",
+    "ollama-ai-provider": "^0.16.0",
+    "ai": "^6.0.184",
+    "@clack/prompts": "^0.9.1"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5"
+  }
+}

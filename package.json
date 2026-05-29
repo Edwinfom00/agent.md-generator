@@ -1,69 +1,14 @@
 {
-  "name": "agent-md-generator",
-  "version": "0.1.0",
-  "description": "Generate production-grade AGENT.md files for your project via an interactive terminal wizard.",
-  "keywords": [
-    "agent",
-    "ai",
-    "claude",
-    "cursor",
-    "kiro",
-    "copilot",
-    "cli",
-    "generator"
+  "name": "agent-md-generator-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
   ],
-  "homepage": "https://agent-md-generator.edwinfom.dev",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Edwinfom00/agent-md-generator"
-  },
-  "license": "MIT",
-  "author": "Edwin Fom",
-  "engines": {
-    "node": ">=20"
-  },
-  "files": [
-    "dist/cli.mjs",
-    "README.md"
-  ],
-  "bin": {
-    "agent-md-generator": "./dist/cli.mjs"
-  },
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "build:cli": "tsup",
-    "cli": "node ./dist/cli.mjs",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@ai-sdk/deepseek": "^2.0.35",
-    "@clack/prompts": "^0.9.1",
-    "@upstash/ratelimit": "^2.0.8",
-    "@upstash/redis": "^1.38.0",
-    "ai": "^6.0.184",
-    "clsx": "^2.1.1",
-    "framer-motion": "^12.39.0",
-    "lucide-react": "^1.16.0",
-    "next": "16.2.6",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "react-icons": "^5.6.0",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "tailwind-merge": "^3.6.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/jszip": "^3.4.0",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.6",
-    "tailwindcss": "^4",
-    "tsup": "^8.5.0",
-    "typescript": "^5"
+    "dev:web": "bun run --cwd packages/web dev",
+    "build:web": "bun run --cwd packages/web build",
+    "build:cli": "bun run --cwd packages/cli build",
+    "cli": "bun run --cwd packages/cli dev",
+    "lint": "bun run --cwd packages/web lint"
   }
 }

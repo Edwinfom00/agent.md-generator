@@ -2,7 +2,7 @@ import { defineConfig } from 'tsup'
 import { resolve } from 'node:path'
 
 export default defineConfig({
-  entry: { cli: 'cli/index.ts' },
+  entry: { cli: 'src/index.ts' },
   outDir: 'dist',
   format: ['esm'],
   target: 'node20',
@@ -10,11 +10,14 @@ export default defineConfig({
   banner: {
     js: '#!/usr/bin/env node',
   },
-  outExtension: () => ({ js: '.mjs' }),
+  outExtension: () => ({ js: '.js' }),
   clean: true,
-  // Bundle CLI deps into the binary so npx users get a single self-contained file
-  noExternal: ['@ai-sdk/deepseek', 'ai', '@clack/prompts'],
+  noExternal: [
+    '@agent-md/shared',
+  ],
   esbuildOptions(options) {
-    options.alias = { '@': resolve('./src') }
+    options.alias = {
+      '@agent-md/shared': resolve('../../packages/shared/src/index.ts'),
+    }
   },
 })

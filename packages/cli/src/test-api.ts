@@ -1,5 +1,5 @@
 async function testDeepSeek() {
-  const apiKey = 'sk-fd5741afcaa6489babb509913b0c827d';
+  const apiKey = 'sdk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
   console.log('Testing DeepSeek API directly with fetch...');
   try {
     const res = await fetch('https://api.deepseek.com/chat/completions', {

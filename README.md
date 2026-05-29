@@ -112,6 +112,15 @@ This monorepo deploys seamlessly on Vercel with zero configuration overrides, us
 
 ---
 
+## Changelog and Hotfixes
+
+### Version 0.1.2 (Bug Fix)
+A rapid hotfix patch released immediately after 0.1.1 to resolve a critical NPM monorepo packaging issue:
+- **Workspace Dependency Resolution**: Moved `@agent-md/shared` from `dependencies` to `devDependencies` since it is fully static-bundled into the final `dist/cli.js` file at compile-time by `tsup`. This completely resolves the `EUNSUPPORTEDPROTOCOL: workspace:*` installation error when users run the CLI via `npx`.
+- **NPM Package Verification Fix**: Cleaned up the `"bin"` path definition to eliminate NPM registry warnings during publishing.
+
+---
+
 ## License
 
 MIT © [Edwin Fom](https://github.com/Edwinfom00)

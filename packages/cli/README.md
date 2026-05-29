@@ -99,6 +99,11 @@ Select which developer profiles you want to generate in a single run:
 
 The V2 release marks a major evolution, transitioning the project from a single web utility to a comprehensive, multi-platform monorepo architecture.
 
+### Version 0.1.2 Hotfix Release
+A rapid hotfix patch released immediately after 0.1.1 to resolve a critical NPM monorepo packaging issue:
+- **Workspace Dependency Resolution**: Moved `@agent-md/shared` from `dependencies` to `devDependencies` since it is fully static-bundled into the final `dist/cli.js` file at compile-time by `tsup`. This completely resolves the `EUNSUPPORTEDPROTOCOL: workspace:*` installation error when users ran the CLI via `npx`.
+- **NPM Package Verification Fix**: Cleaned up the `"bin"` path definition in `package.json` to eliminate NPM registry warnings during publishing.
+
 ### What was in V1:
 - A standalone Next.js web application.
 - Basic form questions requiring manual input.

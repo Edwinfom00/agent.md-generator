@@ -2,6 +2,15 @@
 
 > Twelve questions. Four minutes. A production-grade AGENT.md your AI assistants will read before every keystroke.
 
+> [!IMPORTANT]
+> **Recommended Version: Please use version 0.1.3**
+>
+> Version `0.1.3` is a critical stability release that immediately resolves two core bugs found in the initial `0.1.1` and `0.1.2` publications:
+> - **NPM Monorepo Protocol Resolution**: Moved workspace dependencies to `devDependencies` to eliminate the `EUNSUPPORTEDPROTOCOL: workspace:*` installation error when running via `npx`.
+> - **AI Stream Rendering Fix**: Switched the underlying AI streaming driver from `fullStream` to the robust native `textStream` to prevent terminal stream rendering crashes when API responses contain empty or undefined chunks.
+>
+> If you previously installed or ran `agent-md-generator`, please upgrade or clear your `npx` cache to ensure you are running `0.1.3` for a completely stable, production-ready experience.
+
 A modern, high-performance Bun Workspaces Monorepo featuring both a beautiful, polished Next.js Web App and an interactive CLI Terminal Wizard to generate project-specific AGENT.md (or CLAUDE.md, .cursorrules, etc.) configurations.
 
 **[Live Web App Demo](https://agent-md-generator.edwinfom.dev)** · **Built by [Edwin Fom](https://github.com/Edwinfom00)**
@@ -114,8 +123,9 @@ This monorepo deploys seamlessly on Vercel with zero configuration overrides, us
 
 ## Changelog and Hotfixes
 
-### Version 0.1.2 (Bug Fix)
-A rapid hotfix patch released immediately after 0.1.1 to resolve a critical NPM monorepo packaging issue:
+### Version 0.1.3 (Stability & Bug Fix Release)
+A rapid patch release to resolve two critical issues found in the initial launches:
+- **AI Stream Rendering Fix**: Switched the underlying AI streaming driver from `fullStream` to the robust native `textStream` in `packages/cli/src/generate.ts`. This completely prevents terminal stream rendering crashes when API responses contain empty or undefined chunks.
 - **Workspace Dependency Resolution**: Moved `@agent-md/shared` from `dependencies` to `devDependencies` since it is fully static-bundled into the final `dist/cli.js` file at compile-time by `tsup`. This completely resolves the `EUNSUPPORTEDPROTOCOL: workspace:*` installation error when users run the CLI via `npx`.
 - **NPM Package Verification Fix**: Cleaned up the `"bin"` path definition to eliminate NPM registry warnings during publishing.
 

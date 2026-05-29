@@ -34,7 +34,7 @@ export async function callModel(
 ): Promise<string> {
   const model = createLanguageModel(config, apiKey)
 
-  const { fullStream } = streamText({
+  const { textStream } = streamText({
     model,
     prompt,
     temperature: 0.3,
@@ -43,11 +43,9 @@ export async function callModel(
 
   let fullText = ''
 
-  for await (const part of fullStream) {
-    if (part.type === 'text-delta') {
-      fullText += part.textDelta
-      onChunk(part.textDelta)
-    }
+  for await (const chunk of textStream) {
+    fullText += chunk
+    onChunk(chunk)
   }
 
   return fullText

@@ -16,7 +16,8 @@
   "bin": "dist/cli.js",
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "test:local": "bun src/test-local.ts"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^2.0.35",

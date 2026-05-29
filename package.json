@@ -9,6 +9,7 @@
     "build:web": "bun run --cwd packages/web build",
     "build:cli": "bun run --cwd packages/cli build",
     "cli": "bun run --cwd packages/cli dev",
+    "test:cli": "bun run --cwd packages/cli test:local",
     "lint": "bun run --cwd packages/web lint"
   }
 }

@@ -15,6 +15,7 @@ import {
 import { scoreOutput } from '@/lib/scoreOutput'
 import { encodeConfig } from '@/lib/shareConfig'
 import { refineChatMessage } from '@/lib/chatOutput'
+import { readStream } from '@/lib/readStream'
 import { computeLineDiff, getDiffHunks } from '@/lib/diff'
 import type { DiffHunk } from '@/lib/diff'
 import {
@@ -312,9 +313,9 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
         return // silently fail — user can retry
       }
 
-      const data = await res.json() as { content?: string; error?: string }
-      if (data.content) {
-        setVariantContent(data.content)
+      const content = await readStream(res)
+      if (content) {
+        setVariantContent(content)
         setAbView('B')
       }
     } catch {

@@ -1,3 +1,5 @@
+import { readStream } from './readStream'
+
 export interface ChatResult {
   content: string
   error?: string
@@ -32,12 +34,8 @@ export async function refineChatMessage(
       return { content: '', error: errorMsg }
     }
 
-    const data = await res.json()
-    if (data.error) {
-      return { content: '', error: data.error }
-    }
-
-    return { content: data.content }
+    const content = await readStream(res)
+    return { content }
   } catch (err) {
     return {
       content: '',

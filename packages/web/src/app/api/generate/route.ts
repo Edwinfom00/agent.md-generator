@@ -1,7 +1,7 @@
 import { createDeepSeek } from '@ai-sdk/deepseek'
 import { Ratelimit } from '@upstash/ratelimit'
 import { Redis } from '@upstash/redis'
-import { generateText } from 'ai'
+import { streamText } from 'ai'
 import { NextRequest, NextResponse } from 'next/server'
 import { buildPrompt } from '@/lib/buildPrompt'
 import { buildUpdatePrompt } from '@/lib/buildUpdatePrompt'
@@ -19,7 +19,7 @@ const ratelimit =
   process.env['UPSTASH_REDIS_REST_URL'] && process.env['UPSTASH_REDIS_REST_TOKEN']
     ? new Ratelimit({
         redis: Redis.fromEnv(),
-        limiter: Ratelimit.slidingWindow(5, '1 h'),
+        limiter: Ratelimit.slidingWindow(20, '1 h'),
         analytics: false,
       })
     : null
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     if (!success) {
       const retryAfterSeconds = Math.ceil((reset - Date.now()) / 1000)
       return NextResponse.json(
-        { error: 'Too many requests. You can generate up to 5 AGENT.md files per hour.' },
+        { error: 'Too many requests. You can generate up to 20 AGENT.md files per hour.' },
         {
           status: 429,
           headers: {
@@ -81,15 +81,14 @@ export async function POST(req: NextRequest) {
   const temperature = body.variant === true ? 0.7 : 0.3
 
   try {
-    const { text } = await generateText({
+    const result = streamText({
       model: deepseek('deepseek-chat'),
       prompt,
       temperature,
       maxOutputTokens: 8000,
     })
 
-    const { warnings } = validateOutput(text)
-    return NextResponse.json({ content: text, ...(warnings.length > 0 && { warnings }) })
+    return result.toTextStreamResponse()
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: `Generation failed: ${message}` }, { status: 500 })

@@ -1,3 +1,20 @@
+async function readStream(res: Response): Promise<string> {
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('Response body is not readable')
+  const decoder = new TextDecoder()
+  let content = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      content += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return content
+}
+
 export interface ChatResult {
   content: string
   error?: string
@@ -32,12 +49,8 @@ export async function refineChatMessage(
       return { content: '', error: errorMsg }
     }
 
-    const data = await res.json()
-    if (data.error) {
-      return { content: '', error: data.error }
-    }
-
-    return { content: data.content }
+    const content = await readStream(res)
+    return { content }
   } catch (err) {
     return {
       content: '',

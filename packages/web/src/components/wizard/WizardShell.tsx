@@ -17,6 +17,8 @@ import { ResultScreen } from '@/components/output/ResultScreen'
 import { getQuestionsForStep, isQuestionVisible, TOTAL_STEPS } from '@/lib/questions'
 import { saveToHistory, loadHistory } from '@/lib/history'
 import { decodeConfig } from '@/lib/shareConfig'
+import { readStream } from '@/lib/readStream'
+import { validateOutput } from '@/lib/validateOutput'
 import type { HistoryEntry } from '@/lib/history'
 import type { WizardAnswers, WizardStep } from '@/types'
 
@@ -166,12 +168,12 @@ export function WizardShell() {
         throw new Error(errorMsg)
       }
 
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
+      const content = await readStream(res)
+      const { warnings } = validateOutput(content)
 
-      setOutput(data.content)
-      setWarnings(data.warnings ?? [])
-      saveToHistory({ _change: changeDescription }, data.content)
+      setOutput(content)
+      setWarnings(warnings ?? [])
+      saveToHistory({ _change: changeDescription }, content)
       setWizardStep('output')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -262,12 +264,12 @@ export function WizardShell() {
         throw new Error(errorMsg)
       }
 
-      const data = await res.json()
-      if (data.error) throw new Error(data.error)
+      const content = await readStream(res)
+      const { warnings } = validateOutput(content)
 
-      setOutput(data.content)
-      setWarnings(data.warnings ?? [])
-      saveToHistory(answers, data.content)
+      setOutput(content)
+      setWarnings(warnings ?? [])
+      saveToHistory(answers, content)
       setWizardStep('output')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')

@@ -8,9 +8,10 @@ import { buildUpdatePrompt } from '@/lib/buildUpdatePrompt'
 import { validateOutput } from '@/lib/validateOutput'
 import type { GenerateRequest } from '@/types'
 
+export const runtime = 'edge'
 export const maxDuration = 60
 
-if (process.env.NODE_ENV === 'development' || !process.env.VERCEL) {
+if (typeof process !== 'undefined' && (process.env.NODE_ENV === 'development' || !process.env.VERCEL)) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 }
 

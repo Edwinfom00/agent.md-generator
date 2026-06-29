@@ -151,8 +151,24 @@ export function WizardShell() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: 'update', existingContent, changeDescription }),
       })
+
+      if (!res.ok) {
+        let errorMsg = `Generation failed (Status ${res.status})`
+        try {
+          const errData = await res.clone().json()
+          if (errData.error) errorMsg = errData.error
+        } catch {
+          try {
+            const text = await res.text()
+            if (text) errorMsg = `${errorMsg}: ${text.slice(0, 100)}`
+          } catch {}
+        }
+        throw new Error(errorMsg)
+      }
+
       const data = await res.json()
-      if (!res.ok || data.error) throw new Error(data.error ?? 'Generation failed')
+      if (data.error) throw new Error(data.error)
+
       setOutput(data.content)
       setWarnings(data.warnings ?? [])
       saveToHistory({ _change: changeDescription }, data.content)
@@ -231,8 +247,24 @@ export function WizardShell() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answers }),
       })
+
+      if (!res.ok) {
+        let errorMsg = `Generation failed (Status ${res.status})`
+        try {
+          const errData = await res.clone().json()
+          if (errData.error) errorMsg = errData.error
+        } catch {
+          try {
+            const text = await res.text()
+            if (text) errorMsg = `${errorMsg}: ${text.slice(0, 100)}`
+          } catch {}
+        }
+        throw new Error(errorMsg)
+      }
+
       const data = await res.json()
-      if (!res.ok || data.error) throw new Error(data.error ?? 'Generation failed')
+      if (data.error) throw new Error(data.error)
+
       setOutput(data.content)
       setWarnings(data.warnings ?? [])
       saveToHistory(answers, data.content)

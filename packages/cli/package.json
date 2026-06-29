@@ -1,6 +1,6 @@
 {
   "name": "agent-md-generator",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Generate production-grade AGENT.md files via an interactive terminal wizard.",
   "keywords": ["agent", "ai", "claude", "cursor", "kiro", "copilot", "cli", "generator"],
   "homepage": "https://agent-md-generator.edwinfom.dev",

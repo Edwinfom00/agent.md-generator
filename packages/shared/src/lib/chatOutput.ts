@@ -18,10 +18,23 @@ export async function refineChatMessage(
       }),
     })
 
-    const data = await res.json()
+    if (!res.ok) {
+      let errorMsg = `Generation failed (Status ${res.status})`
+      try {
+        const errData = await res.clone().json()
+        if (errData.error) errorMsg = errData.error
+      } catch {
+        try {
+          const text = await res.text()
+          if (text) errorMsg = `${errorMsg}: ${text.slice(0, 100)}`
+        } catch {}
+      }
+      return { content: '', error: errorMsg }
+    }
 
-    if (!res.ok || data.error) {
-      return { content: '', error: data.error ?? 'Generation failed' }
+    const data = await res.json()
+    if (data.error) {
+      return { content: '', error: data.error }
     }
 
     return { content: data.content }

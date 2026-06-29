@@ -307,6 +307,11 @@ export function ResultScreen({ content, answers, warnings, onReset, onRegenerate
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ answers, variant: true }),
       })
+
+      if (!res.ok) {
+        return // silently fail — user can retry
+      }
+
       const data = await res.json() as { content?: string; error?: string }
       if (data.content) {
         setVariantContent(data.content)
